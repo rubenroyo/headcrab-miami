@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<coverage version="1.0" date="2026-01-12_10-54-57" tag="">
+  <assembly name="Assembly-CSharp">
+    <class name="CameraFollow" coveredlines="89" coverablelines="92" totallines="199" coveredbranches="0" totalbranches="0" />
+    <class name="EnemyController" coveredlines="11" coverablelines="11" totallines="22" coveredbranches="0" totalbranches="0" />
+    <class name="PlayerController" coveredlines="173" coverablelines="218" totallines="392" coveredbranches="0" totalbranches="0" />
+    <class name="TrajectoryPreview" coveredlines="2" coverablelines="70" totallines="131" coveredbranches="0" totalbranches="0" />
+  </assembly>
+  <assembly name="Assembly-CSharp-Editor">
+    <class name="ReadmeEditor" coveredlines="3" coverablelines="140" totallines="242" coveredbranches="0" totalbranches="0" />
+  </assembly>
+  <assembly name="PlayModeTests">
+    <class name="CameraFollowPlayTests" coveredlines="105" coverablelines="141" totallines="292" coveredbranches="0" totalbranches="0" />
+    <class name="EnemyControllerPlayTests" coveredlines="77" coverablelines="105" totallines="212" coveredbranches="0" totalbranches="0" />
+    <class name="PlayerControllerJumpPlayTests" coveredlines="133" coverablelines="136" totallines="257" coveredbranches="0" totalbranches="0" />
+    <class name="PlayerControllerMovementPlayTests" coveredlines="57" coverablelines="59" totallines="142" coveredbranches="0" totalbranches="0" />
+    <class name="PlayerControllerPossessionPlayTests" coveredlines="99" coverablelines="138" totallines="276" coveredbranches="0" totalbranches="0" />
+    <class name="PlayerMovementTests" coveredlines="49" coverablelines="50" totallines="95" coveredbranches="0" totalbranches="0" />
+  </assembly>
+</coverage>

@@ -18,6 +18,10 @@ public class CameraFollow : MonoBehaviour
     [SerializeField] private float aimSmoothTime = 0.15f;
     [SerializeField] private float maxAimDistance = 10f;
 
+    [Header("Possessed Enemy Camera")]
+    [SerializeField] private float possessedCameraHeight = 30f;
+    [SerializeField] private float possessedAimCameraHeight = 40f;
+
     [Header("Time Control")]
     [SerializeField] private float slowTimeScale = 0.5f;
 
@@ -26,6 +30,10 @@ public class CameraFollow : MonoBehaviour
 
     private bool isAiming = false;
     private bool isPlayerJumping = false;
+
+    // Guardar valores originales para restaurar después de posesión
+    private float defaultBaseOffsetY;
+    private float defaultAimCameraHeight;
 
     private float jumpDuration;
     private float jumpElapsed;
@@ -38,6 +46,9 @@ public class CameraFollow : MonoBehaviour
     void Start()
     {
         mainCamera = Camera.main;
+        // Guardar valores por defecto
+        defaultBaseOffsetY = baseOffset.y;
+        defaultAimCameraHeight = aimCameraHeight;
     }
 
     void Update()
@@ -189,5 +200,30 @@ public class CameraFollow : MonoBehaviour
             return ray.GetPoint(distance);
 
         return target.position;
+    }
+
+    public void SetTarget(Transform newTarget)
+    {
+        target = newTarget;
+    }
+
+    /// <summary>
+    /// Cambia los parámetros de cámara para modo posesión de enemigo.
+    /// Guarda los valores originales para restaurarlos correctamente.
+    /// </summary>
+    public void SetPossessedMode(bool isPossessed)
+    {
+        if (isPossessed)
+        {
+            // En posesión: usar alturas de posesión (30 y 40)
+            baseOffset = new Vector3(baseOffset.x, possessedCameraHeight, baseOffset.z);
+            aimCameraHeight = possessedAimCameraHeight;
+        }
+        else
+        {
+            // Normal: restaurar valores guardados en Start
+            baseOffset = new Vector3(baseOffset.x, defaultBaseOffsetY, baseOffset.z);
+            aimCameraHeight = defaultAimCameraHeight;
+        }
     }
 }
