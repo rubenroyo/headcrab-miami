@@ -6,12 +6,15 @@
 [Ll]ogs/
 [Uu]ser[Ss]ettings/
 
+# IDE
 .vs/
 .idea/
 .DS_Store
 
+# Project files
 *.csproj
 *.sln
+*.slnx
 *.user
 *.userprefs
 *.pidb
@@ -19,3 +22,10 @@
 *.svd
 
 sysinfo.txt
+
+# Code Coverage
+[Cc]ode[Cc]overage/
+
+# Documentation generada por IA
+POSSESSED_ENEMY_MOVEMENT.md
+TWO_PHASE_JUMP_FIX.md
