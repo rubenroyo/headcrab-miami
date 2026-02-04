@@ -15,16 +15,22 @@ public class PlayerController : MonoBehaviour
 
     [Header("Referencias")]
     [SerializeField] private Camera mainCamera;
-    [SerializeField] private TrajectoryPreview trajectoryPreview;
+    [SerializeField] private TrajectoryUI trajectoryUI;
     [SerializeField] private CameraFollow cameraFollow;
 
     [Header("Salto")]
-    [SerializeField] private float jumpDuration = 1f;
-    [SerializeField] private float jumpHeight = 5f;
+    [SerializeField] private float maxJumpDuration = 1f;
+    [SerializeField] private float minJumpDuration = 0.2f;
+    [SerializeField] private float maxJumpHeight = 5f;
+    [SerializeField] private float minJumpHeight = 1f;
+    
+    // Valores calculados para el salto actual
+    private float currentJumpDuration;
+    private float currentJumpHeight;
 
     [Header("Posesión")]
-    [SerializeField] private float possessionCooldown = 0.5f; // Tiempo de inmunidad tras desmontar
-    [SerializeField] private float possessedEnemyMoveSpeed = 4f; // Velocidad del enemigo cuando se le posee
+    [SerializeField] private float possessionCooldown = 0.5f;
+    [SerializeField] private float possessedEnemyMoveSpeed = 4f;
 
     public PlayerState CurrentState { get; private set; } = PlayerState.Normal;
 
@@ -34,61 +40,72 @@ public class PlayerController : MonoBehaviour
 
     // Posesión
     private EnemyController possessedEnemy;
-    private float lastDismountTime = -999f; // Tiempo del último desmontaje
+    private float lastDismountTime = -999f;
 
     // Armas
     private WeaponController weaponController;
 
+    // Referencia al SettingsController
+    private SettingsController settingsController;
+
     // Test-friendly public accessors
     public float MoveSpeed { get => moveSpeed; set => moveSpeed = value; }
-    public float JumpHeight { get => jumpHeight; set => jumpHeight = value; }
-    public float JumpDuration { get => jumpDuration; set => jumpDuration = value; }
+    public float MaxJumpHeight { get => maxJumpHeight; set => maxJumpHeight = value; }
+    public float MaxJumpDuration { get => maxJumpDuration; set => maxJumpDuration = value; }
+    public float CurrentJumpHeight => currentJumpHeight;
+    public float CurrentJumpDuration => currentJumpDuration;
+    public EnemyController PossessedEnemy => possessedEnemy;
 
     /// <summary>
-    /// Inicia el salto usando los puntos ya calculados en TrajectoryPreview.
-    /// Método público para permitir tests que invoquen el salto.
-    /// </summary>
-    public void StartJumpPublic()
-    {
-        StartJump();
-    }
-
-    /// <summary>
-    /// Inicia un salto usando unos puntos explícitos (útil en tests).
+    /// Inicia un salto con puntos de trayectoria personalizados (útil para tests y dismount).
     /// </summary>
     public void StartJumpWithPoints(Vector3[] points, float durationOverride = -1f)
     {
         jumpTrajectoryPoints = points;
 
-        if (durationOverride > 0f)
-            jumpDuration = durationOverride;
-
         if (jumpTrajectoryPoints == null || jumpTrajectoryPoints.Length < 2)
             return;
+
+        // Calcular distancia y proporciones
+        float jumpDistance = CalculateTotalTrajectoryDistance();
+        float maxDistance = trajectoryUI != null ? trajectoryUI.MaxDistance : 10f;
+        float distanceRatio = Mathf.Clamp01(jumpDistance / maxDistance);
+        
+        if (durationOverride > 0f)
+            currentJumpDuration = durationOverride;
+        else
+            currentJumpDuration = Mathf.Lerp(minJumpDuration, maxJumpDuration, distanceRatio);
+        
+        currentJumpHeight = Mathf.Lerp(minJumpHeight, maxJumpHeight, distanceRatio);
 
         CurrentState = PlayerState.Jumping;
         jumpElapsedTime = 0f;
 
-        trajectoryPreview?.SetActive(false);
-        cameraFollow?.SetJumping(true, jumpDuration);
+        trajectoryUI?.SetActive(false);
+        cameraFollow?.SetJumping(true, currentJumpDuration);
     }
-
 
     void Start()
     {
-        if (mainCamera == null)
+        // Obtener SettingsController
+        settingsController = SettingsController.Instance;
+
+        // Usar la cámara del SettingsController si está disponible
+        if (settingsController != null && settingsController.MainCamera != null)
+            mainCamera = settingsController.MainCamera;
+        else if (mainCamera == null)
             mainCamera = Camera.main;
 
-        if (trajectoryPreview == null)
-            trajectoryPreview = FindFirstObjectByType<TrajectoryPreview>();
+        if (trajectoryUI == null)
+            trajectoryUI = FindFirstObjectByType<TrajectoryUI>();
 
         if (cameraFollow == null)
             cameraFollow = FindFirstObjectByType<CameraFollow>();
 
-            // Inicializar WeaponController
-            weaponController = GetComponent<WeaponController>();
-            if (weaponController == null)
-                weaponController = gameObject.AddComponent<WeaponController>();
+        // Inicializar WeaponController
+        weaponController = GetComponent<WeaponController>();
+        if (weaponController == null)
+            weaponController = gameObject.AddComponent<WeaponController>();
     }
 
     void Update()
@@ -123,7 +140,6 @@ public class PlayerController : MonoBehaviour
         if (Input.GetMouseButtonDown(1))
             EnterAiming();
 
-        // Inputs de armas
         if (Input.GetMouseButtonDown(0) && weaponController?.EquippedWeapon != null)
         {
             weaponController.TryFire();
@@ -148,9 +164,8 @@ public class PlayerController : MonoBehaviour
 
     void UpdateJump()
     {
-        // Salto unificado (tanto normal como desmontaje)
         jumpElapsedTime += Time.deltaTime;
-        float progress = Mathf.Clamp01(jumpElapsedTime / jumpDuration);
+        float progress = Mathf.Clamp01(jumpElapsedTime / currentJumpDuration);
 
         if (jumpTrajectoryPoints == null || jumpTrajectoryPoints.Length == 0)
         {
@@ -163,29 +178,22 @@ public class PlayerController : MonoBehaviour
 
         Vector3 trajectoryPos = GetPositionAlongTrajectory(targetDistance);
         
-        // Interpolar altura desde punto inicial al final
         float startY = jumpTrajectoryPoints[0].y;
         float endY = jumpTrajectoryPoints[^1].y;
+        float peakY = startY + currentJumpHeight;
         
-        // La altura del pico es la altura inicial + jumpHeight (como offset relativo)
-        float peakY = startY + jumpHeight;
-        
-        // Calcular altura con dos fases
         float currentY;
         if (progress < 0.5f)
         {
-            // Primera mitad: subida lineal de startY a peakY
-            float halfProgress = progress * 2f; // 0 a 1 durante primera mitad
+            float halfProgress = progress * 2f;
             currentY = Mathf.Lerp(startY, peakY, halfProgress);
         }
         else
         {
-            // Segunda mitad: bajada lineal de peakY a endY
-            float halfProgress = (progress - 0.5f) * 2f; // 0 a 1 durante segunda mitad
+            float halfProgress = (progress - 0.5f) * 2f;
             currentY = Mathf.Lerp(peakY, endY, halfProgress);
         }
 
-        // Posición final: XZ de trayectoria + Y calculada
         transform.position = new Vector3(trajectoryPos.x, currentY, trajectoryPos.z);
 
         CheckPossessionCollision();
@@ -193,7 +201,6 @@ public class PlayerController : MonoBehaviour
         if (progress >= 1f && CurrentState == PlayerState.Jumping)
             EndJump();
     }
-
 
     void UpdatePossessing()
     {
@@ -203,7 +210,6 @@ public class PlayerController : MonoBehaviour
             return;
         }
 
-        // Clic izquierdo: si además mantiene clic derecho, desmonta; si no, dispara
         if (Input.GetMouseButtonDown(0))
         {
             if (Input.GetMouseButton(1))
@@ -216,17 +222,13 @@ public class PlayerController : MonoBehaviour
             }
         }
 
-        // Mover al enemigo poseído
         HandlePossessedMovement();
 
-        // Player se "sube" sobre el enemigo
         Vector3 pos = possessedEnemy.transform.position + Vector3.up * 3f;
         transform.position = pos;
 
-        // Rotar hacia el mouse (igual que el jugador normal)
         RotateTowardsMouse();
     }
-
 
     // ---------------- ACTIONS ----------------
 
@@ -235,32 +237,55 @@ public class PlayerController : MonoBehaviour
 
     void StartJump()
     {
-        jumpTrajectoryPoints = trajectoryPreview.GetTrajectoryPoints();
+        jumpTrajectoryPoints = trajectoryUI.GetTrajectoryPoints();
         if (jumpTrajectoryPoints.Length < 2)
             return;
+
+        // Calcular distancia real del salto
+        float jumpDistance = CalculateTotalTrajectoryDistance();
+        float maxDistance = trajectoryUI.MaxDistance;
+        
+        // Calcular proporción (0 a 1) de la distancia máxima
+        float distanceRatio = Mathf.Clamp01(jumpDistance / maxDistance);
+        
+        // Calcular duración y altura proporcionales
+        currentJumpDuration = Mathf.Lerp(minJumpDuration, maxJumpDuration, distanceRatio);
+        currentJumpHeight = Mathf.Lerp(minJumpHeight, maxJumpHeight, distanceRatio);
 
         CurrentState = PlayerState.Jumping;
         jumpElapsedTime = 0f;
 
-        trajectoryPreview.SetActive(false);
-        cameraFollow.SetJumping(true, jumpDuration);
+        trajectoryUI.SetActive(false);
+        cameraFollow.SetJumping(true, currentJumpDuration);
     }
 
     void EndJump()
     {
         if (CurrentState != PlayerState.Possessing)
         {
-            CurrentState = PlayerState.Normal;
-
-            // Protección: si no hay puntos de trayectoria, no intentar acceder
             if (jumpTrajectoryPoints != null && jumpTrajectoryPoints.Length > 0)
-                transform.position = jumpTrajectoryPoints[^1];
+            {
+                Vector3 finalPos = jumpTrajectoryPoints[^1];
+                transform.position = new Vector3(finalPos.x, 0.5f, finalPos.z); // Forzar Y=0.5
+            }
 
-            if (trajectoryPreview != null)
-                trajectoryPreview.SetActive(true);
+            if (trajectoryUI != null)
+                trajectoryUI.SetActive(true);
 
             if (cameraFollow != null)
                 cameraFollow.SetJumping(false, 0f);
+
+            // Si el clic derecho sigue pulsado, reactivar modo apuntado
+            if (Input.GetMouseButton(1))
+            {
+                CurrentState = PlayerState.Aiming;
+                if (cameraFollow != null)
+                    cameraFollow.ForceAimMode(true);
+            }
+            else
+            {
+                CurrentState = PlayerState.Normal;
+            }
         }
     }
 
@@ -268,11 +293,10 @@ public class PlayerController : MonoBehaviour
 
     void CheckPossessionCollision()
     {
-        // Verificar cooldown de posesión (inmunidad tras desmontar)
         if (Time.time - lastDismountTime < possessionCooldown)
             return;
 
-        Collider[] hits = Physics.OverlapSphere(transform.position, 1f); // radio de colisión
+        Collider[] hits = Physics.OverlapSphere(transform.position, 1f);
         foreach (Collider col in hits)
         {
             EnemyController enemy = col.GetComponent<EnemyController>();
@@ -286,41 +310,69 @@ public class PlayerController : MonoBehaviour
 
     void PossessEnemy(EnemyController enemy)
     {
-        // Cancelar salto
-        EndJump();
+        // Guardar si tenemos que reactivar el aim después
+        bool wasHoldingAim = Input.GetMouseButton(1);
+        
+        // Forzar estado normal temporalmente para que EndJump no reactive aim
+        CurrentState = PlayerState.Normal;
+        
+        if (jumpTrajectoryPoints != null && jumpTrajectoryPoints.Length > 0)
+        {
+            Vector3 finalPos = jumpTrajectoryPoints[^1];
+            transform.position = new Vector3(finalPos.x, 0.5f, finalPos.z);
+        }
 
-        // Cambiar estado
+        if (trajectoryUI != null)
+            trajectoryUI.SetActive(true);
+
+        if (cameraFollow != null)
+            cameraFollow.SetJumping(false, 0f);
+
+        // Ahora entrar en modo posesión
         CurrentState = PlayerState.Possessing;
 
-        // Guardar referencia
         possessedEnemy = enemy;
         possessedEnemy.OnPossessed();
 
-        // Mover Player sobre el enemigo
         transform.position = enemy.transform.position + Vector3.up * 3f;
 
-        // Cambiar cámara
         if (cameraFollow != null)
         {
-            cameraFollow.SetJumping(false, 0f); // asegura cámara no esté en modo salto
             cameraFollow.SetTarget(enemy.transform);
-            cameraFollow.SetPossessedMode(true); // Activar alturas de posesión
+            cameraFollow.SetPossessedMode(true);
+            
+            // Reactivar slow-motion si seguía pulsando clic derecho
+            if (wasHoldingAim)
+                cameraFollow.ForceAimMode(true);
         }
     }
 
+    /// <summary>
+    /// Libera al enemigo poseído y restaura el estado normal (sin salto).
+    /// </summary>
     public void ReleaseEnemy()
+    {
+        ReleasePossessedEnemy();
+        RestoreCameraToPlayer();
+        CurrentState = PlayerState.Normal;
+    }
+
+    private void ReleasePossessedEnemy()
     {
         if (possessedEnemy != null)
         {
             possessedEnemy.OnReleased();
             possessedEnemy = null;
         }
+    }
+
+    private void RestoreCameraToPlayer()
+    {
         if (cameraFollow != null)
         {
             cameraFollow.SetTarget(transform);
-            cameraFollow.SetPossessedMode(false); // Restaurar alturas normales
+            cameraFollow.SetPossessedMode(false);
         }
-        CurrentState = PlayerState.Normal;
     }
 
     // ---------------- HELPERS ----------------
@@ -347,27 +399,22 @@ public class PlayerController : MonoBehaviour
 
     void RotateTowardsMouse()
     {
-        Ray ray = mainCamera.ScreenPointToRay(Input.mousePosition);
-        Plane groundPlane = new Plane(Vector3.up, Vector3.zero);
+        if (mainCamera == null || settingsController == null) return;
 
-        if (groundPlane.Raycast(ray, out float distance))
+        Vector3 mouseWorld = settingsController.GetMouseWorldPosition(mainCamera, Input.mousePosition);
+        Vector3 dir = mouseWorld - transform.position;
+        dir.y = 0f;
+
+        if (dir.sqrMagnitude > 0.001f)
         {
-            Vector3 hitPoint = ray.GetPoint(distance);
-            Vector3 dir = hitPoint - transform.position;
-            dir.y = 0f;
+            transform.forward = dir.normalized;
 
-            if (dir.sqrMagnitude > 0.001f)
+            if (CurrentState == PlayerState.Possessing && possessedEnemy != null)
             {
-                transform.forward = dir.normalized;
-
-                // Si estamos poseyendo, hacer que el enemigo también mire al ratón
-                if (CurrentState == PlayerState.Possessing && possessedEnemy != null)
-                {
-                    Vector3 enemyDir = hitPoint - possessedEnemy.transform.position;
-                    enemyDir.y = 0f;
-                    if (enemyDir.sqrMagnitude > 0.001f)
-                        possessedEnemy.transform.forward = enemyDir.normalized;
-                }
+                Vector3 enemyDir = mouseWorld - possessedEnemy.transform.position;
+                enemyDir.y = 0f;
+                if (enemyDir.sqrMagnitude > 0.001f)
+                    possessedEnemy.transform.forward = enemyDir.normalized;
             }
         }
     }
@@ -406,20 +453,14 @@ public class PlayerController : MonoBehaviour
     {
         if (possessedEnemy == null) return;
 
-        // Marcar tiempo de desmontaje para cooldown
         lastDismountTime = Time.time;
+        ReleasePossessedEnemy();
 
-        // Liberar enemigo inmediatamente
-        possessedEnemy.OnReleased();
-        possessedEnemy = null;
-
-        // Usar la trayectoria calculada por TrajectoryPreview (igual que salto normal)
-        if (trajectoryPreview != null)
+        if (trajectoryUI != null)
         {
-            jumpTrajectoryPoints = trajectoryPreview.GetTrajectoryPoints();
+            jumpTrajectoryPoints = trajectoryUI.GetTrajectoryPoints();
         }
         
-        // Si no hay trayectoria, calcular punto directamente abajo como fallback
         if (jumpTrajectoryPoints == null || jumpTrajectoryPoints.Length == 0)
         {
             Vector3 currentPos = transform.position;
@@ -427,44 +468,37 @@ public class PlayerController : MonoBehaviour
             Vector3 groundPoint;
             
             if (Physics.Raycast(groundRay, out RaycastHit hit))
-                groundPoint = hit.point;
+                groundPoint = new Vector3(hit.point.x, 0.5f, hit.point.z); // Y=0.5 para detección de paredes
             else
-                groundPoint = new Vector3(currentPos.x, 0f, currentPos.z);
+                groundPoint = new Vector3(currentPos.x, 0.5f, currentPos.z);
             
             jumpTrajectoryPoints = new Vector3[] { currentPos, groundPoint };
         }
         else
         {
-            // Ajustar el último punto de la trayectoria al suelo
-            // (TrajectoryPreview lo calcula desde altura del enemigo)
             Vector3 lastPoint = jumpTrajectoryPoints[^1];
-            Ray groundRay = new Ray(lastPoint + Vector3.up * 10f, Vector3.down);
-            
-            if (Physics.Raycast(groundRay, out RaycastHit hit, 20f))
-            {
-                // Actualizar Y del último punto al suelo
-                jumpTrajectoryPoints[^1] = new Vector3(lastPoint.x, hit.point.y, lastPoint.z);
-            }
-            else
-            {
-                // Fallback: asumir Y = 0
-                jumpTrajectoryPoints[^1] = new Vector3(lastPoint.x, 0f, lastPoint.z);
-            }
+            // Forzar Y=0.5 en el punto final
+            jumpTrajectoryPoints[^1] = new Vector3(lastPoint.x, 0.5f, lastPoint.z);
         }
 
-        // Iniciar salto con la trayectoria
+        // Calcular duración y altura para el dismount
+        float jumpDistance = CalculateTotalTrajectoryDistance();
+        float maxDistance = trajectoryUI != null ? trajectoryUI.MaxDistance : 10f;
+        float distanceRatio = Mathf.Clamp01(jumpDistance / maxDistance);
+        currentJumpDuration = Mathf.Lerp(minJumpDuration, maxJumpDuration, distanceRatio);
+        currentJumpHeight = Mathf.Lerp(minJumpHeight, maxJumpHeight, distanceRatio);
+
         jumpElapsedTime = 0f;
         CurrentState = PlayerState.Jumping;
 
-        // Asignar cámara de nuevo al Player
         if (cameraFollow != null)
         {
-            cameraFollow.SetTarget(this.transform);
-            cameraFollow.SetJumping(true, jumpDuration);
+            cameraFollow.SetTarget(transform);
+            cameraFollow.SetPossessedMode(false); // Restaurar altura de cámara a normal
+            cameraFollow.SetJumping(true, currentJumpDuration);
         }
         
-        // Desactivar preview de trayectoria
-        if (trajectoryPreview != null)
-            trajectoryPreview.SetActive(false);
+        if (trajectoryUI != null)
+            trajectoryUI.SetActive(false);
     }
 }

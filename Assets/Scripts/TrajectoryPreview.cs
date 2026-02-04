@@ -3,25 +3,34 @@ using UnityEngine;
 public class TrajectoryPreview : MonoBehaviour
 {
     [Header("Referencias")]
-    public Transform player;
-    public Camera mainCamera;
-    public LineRenderer lineRenderer;
+    [SerializeField] private Transform player;
+    [SerializeField] private LineRenderer lineRenderer;
 
     [Header("Salto")]
-    public float maxDistance = 10f;
+    [SerializeField] private float maxDistance = 10f;
 
     [Header("Rebotes")]
     [SerializeField] private int maxBounces = 3; 
     [SerializeField] private LayerMask wallLayerMask;
 
+    // Referencias cacheadas
     private Vector3[] cachedTrajectoryPoints;
+    private PlayerController playerController;
+    private SettingsController settingsController;
 
+    void Start()
+    {
+        // Cachear referencias para evitar búsquedas cada frame
+        if (player != null)
+            playerController = player.GetComponent<PlayerController>();
+        
+        settingsController = SettingsController.Instance;
+    }
 
     void Update()
     {
         // No mostrar la línea si el Player está saltando
-        PlayerController playerCtrl = player.GetComponent<PlayerController>();
-        if (playerCtrl != null && playerCtrl.CurrentState == PlayerState.Jumping)
+        if (playerController != null && playerController.CurrentState == PlayerState.Jumping)
         {
             lineRenderer.enabled = false;
             return;
@@ -31,11 +40,12 @@ public class TrajectoryPreview : MonoBehaviour
         {
             lineRenderer.enabled = true;
 
-            Ray ray = mainCamera.ScreenPointToRay(Input.mousePosition);
-            Plane groundPlane = new Plane(Vector3.up, Vector3.zero);
+            // Usar SettingsController centralizado para obtener la posición del ratón en el mundo
             Vector3 mouseWorld = player.position;
-            if (groundPlane.Raycast(ray, out float distance))
-                mouseWorld = ray.GetPoint(distance);
+            if (settingsController != null)
+            {
+                mouseWorld = settingsController.GetMouseWorldPosition(null, Input.mousePosition);
+            }
 
             Vector3 dir = mouseWorld - player.position;
             dir.y = 0f;

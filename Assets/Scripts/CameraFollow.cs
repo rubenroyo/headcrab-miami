@@ -31,7 +31,6 @@ public class CameraFollow : MonoBehaviour
     private bool isAiming = false;
     private bool isPlayerJumping = false;
 
-    // Guardar valores originales para restaurar después de posesión
     private float defaultBaseOffsetY;
     private float defaultAimCameraHeight;
 
@@ -42,11 +41,17 @@ public class CameraFollow : MonoBehaviour
     private Vector3 jumpVelocity;
     private Vector3 jumpStartPosition;
 
+    private SettingsController settingsController;
 
     void Start()
     {
-        mainCamera = Camera.main;
-        // Guardar valores por defecto
+        settingsController = SettingsController.Instance;
+        
+        if (settingsController != null && settingsController.MainCamera != null)
+            mainCamera = settingsController.MainCamera;
+        else if (mainCamera == null)
+            mainCamera = Camera.main;
+        
         defaultBaseOffsetY = baseOffset.y;
         defaultAimCameraHeight = aimCameraHeight;
     }
@@ -76,7 +81,6 @@ public class CameraFollow : MonoBehaviour
 
         Vector3 mouseWorldPos = GetMouseWorldPosition();
 
-        // ⬇️ Y FIJA, no dependiente del jugador
         Vector3 basePos = new Vector3(
             target.position.x,
             baseOffset.y,
@@ -137,17 +141,14 @@ public class CameraFollow : MonoBehaviour
         jumpElapsed += Time.deltaTime;
         float t = Mathf.Clamp01(jumpElapsed / jumpDuration);
 
-        // Altura interpolada
         float height = Mathf.Lerp(jumpStartHeight, baseOffset.y, t);
 
-        // Posición objetivo REAL (donde debería acabar)
         Vector3 targetPos = new Vector3(
             target.position.x,
             height,
             target.position.z
         );
 
-        // SmoothDamp completo XYZ (no teletransporte)
         transform.position = Vector3.SmoothDamp(
             transform.position,
             targetPos,
@@ -158,7 +159,6 @@ public class CameraFollow : MonoBehaviour
         if (t >= 1f)
             isPlayerJumping = false;
     }
-
 
     public void SetJumping(bool jumping, float duration)
     {
@@ -176,7 +176,6 @@ public class CameraFollow : MonoBehaviour
         }
     }
 
-
     void EnterAimMode()
     {
         isAiming = true;
@@ -191,8 +190,29 @@ public class CameraFollow : MonoBehaviour
         Time.fixedDeltaTime = 0.02f;
     }
 
+    /// <summary>
+    /// Fuerza el modo de apuntado desde fuera (para reactivar al aterrizar).
+    /// </summary>
+    public void ForceAimMode(bool aiming)
+    {
+        if (aiming)
+            EnterAimMode();
+        else
+            ExitAimMode();
+    }
+
+    /// <summary>
+    /// Obtiene la posición del ratón en el mundo usando SettingsController centralizado.
+    /// </summary>
     Vector3 GetMouseWorldPosition()
     {
+        if (settingsController != null)
+            return settingsController.GetMouseWorldPosition(mainCamera, Input.mousePosition);
+
+        // Fallback si no hay SettingsController
+        if (mainCamera == null)
+            return target.position;
+
         Ray ray = mainCamera.ScreenPointToRay(Input.mousePosition);
         Plane groundPlane = new Plane(Vector3.up, Vector3.zero);
 
@@ -207,21 +227,15 @@ public class CameraFollow : MonoBehaviour
         target = newTarget;
     }
 
-    /// <summary>
-    /// Cambia los parámetros de cámara para modo posesión de enemigo.
-    /// Guarda los valores originales para restaurarlos correctamente.
-    /// </summary>
     public void SetPossessedMode(bool isPossessed)
     {
         if (isPossessed)
         {
-            // En posesión: usar alturas de posesión (30 y 40)
             baseOffset = new Vector3(baseOffset.x, possessedCameraHeight, baseOffset.z);
             aimCameraHeight = possessedAimCameraHeight;
         }
         else
         {
-            // Normal: restaurar valores guardados en Start
             baseOffset = new Vector3(baseOffset.x, defaultBaseOffsetY, baseOffset.z);
             aimCameraHeight = defaultAimCameraHeight;
         }
