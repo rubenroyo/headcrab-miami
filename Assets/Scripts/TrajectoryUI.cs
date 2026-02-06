@@ -58,12 +58,12 @@ public class TrajectoryUI : MonoBehaviour
         // Validar referencias antes de crear pool
         if (dotPrefab == null)
         {
-            Debug.LogError("TrajectoryUI: dotPrefab no está asignado!");
+           //Debug.LogError("TrajectoryUI: dotPrefab no está asignado!");
             return;
         }
         if (container == null)
         {
-            Debug.LogError("TrajectoryUI: container no está asignado!");
+            //Debug.LogError("TrajectoryUI: container no está asignado!");
             return;
         }
 
@@ -87,7 +87,7 @@ public class TrajectoryUI : MonoBehaviour
                 // Empezar a mostrar trayectoria
                 isActive = true;
                 currentGrowDistance = 0f;
-                Debug.Log("TrajectoryUI: Activada");
+                //Debug.Log("TrajectoryUI: Activada");
             }
 
             UpdateTrajectory();
@@ -99,7 +99,7 @@ public class TrajectoryUI : MonoBehaviour
                 isActive = false;
                 currentGrowDistance = 0f;
                 HideAllDots();
-                Debug.Log("TrajectoryUI: Desactivada");
+                //Debug.Log("TrajectoryUI: Desactivada");
             }
         }
     }
@@ -140,14 +140,14 @@ public class TrajectoryUI : MonoBehaviour
 
         if (cachedTrajectoryPoints == null || cachedTrajectoryPoints.Length < 2)
         {
-            Debug.Log("TrajectoryUI: No hay puntos de trayectoria");
+            //Debug.Log("TrajectoryUI: No hay puntos de trayectoria");
             return;
         }
 
         // Calcular cuántos puntos necesitamos
         int numDots = Mathf.FloorToInt(currentGrowDistance / dotSpacing);
         
-        Debug.Log($"TrajectoryUI: growDist={currentGrowDistance:F2}, numDots={numDots}, totalDist={totalTrajectoryDistance:F2}");
+        //Debug.Log($"TrajectoryUI: growDist={currentGrowDistance:F2}, numDots={numDots}, totalDist={totalTrajectoryDistance:F2}");
         
         if (numDots <= 0)
             return;
@@ -155,7 +155,7 @@ public class TrajectoryUI : MonoBehaviour
         // Verificar que hay puntos en el pool
         if (dotPool.Count == 0)
         {
-            Debug.LogWarning("TrajectoryUI: No hay puntos en el pool. Verifica que el prefab tenga componente Image.");
+            //Debug.LogWarning("TrajectoryUI: No hay puntos en el pool. Verifica que el prefab tenga componente Image.");
             return;
         }
             
@@ -319,7 +319,7 @@ public class TrajectoryUI : MonoBehaviour
             {
                 // Si el prefab no tiene Image, destruir y salir para evitar bucle infinito
                 Destroy(dot);
-                Debug.LogError("TrajectoryUI: El prefab no tiene componente Image!");
+                //Debug.LogError("TrajectoryUI: El prefab no tiene componente Image!");
                 break;
             }
         }

@@ -32,6 +32,13 @@ public class PixelArtEdgeDetectionFeature : ScriptableRendererFeature
             Debug.LogWarning("PixelArtEdgeDetectionFeature: No material assigned!");
             return;
         }
+        
+        // Solo aplicar en cámaras que renderizen geometría (no en preview, reflection, etc.)
+        if (renderingData.cameraData.cameraType != CameraType.Game && 
+            renderingData.cameraData.cameraType != CameraType.SceneView)
+            return;
+        
+        // Requerir depth y normal textures
         pass.ConfigureInput(ScriptableRenderPassInput.Depth | ScriptableRenderPassInput.Normal);
         renderer.EnqueuePass(pass);
     }
