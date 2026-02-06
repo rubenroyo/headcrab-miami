@@ -4,6 +4,7 @@ Shader "Custom/PixelArtEdgeDetectionDebug"
     {
         _DebugMode ("Debug Mode", Range(0, 8)) = 0
         _DepthThreshold ("Depth Threshold", Range(0, 5)) = 1.5
+        _DepthAngleMultiplier ("Depth Angle Multiplier", Range(1, 10)) = 4
         _NormalThreshold ("Normal Threshold", Range(0, 2)) = 0.5
         _EdgeThickness ("Edge Thickness", Range(0.5, 3)) = 1
         _DepthNear ("Depth Near", Range(0, 50)) = 8
@@ -36,35 +37,44 @@ Shader "Custom/PixelArtEdgeDetectionDebug"
             float _DebugMode;
             float _DepthThreshold;
             float _NormalThreshold;
+            float _DepthAngleMultiplier;
             float _EdgeThickness;
             float _DepthNear;
             float _DepthFar;
             float _DarkenAmount;
             float _BrightenAmount;
             
-            // Función para calcular edge basado en depth
-            // Solo pinta como edge el pixel MÁS CERCANO (menor depth)
+            // Robert's Cross edge detection para depth
+            // Usa muestras diagonales: TL, TR, BL, BR
+            // Solo pinta como edge el pixel MÁS CERCANO
+            // Threshold variable según ángulo de superficie
             float CalculateDepthEdge(float2 uv, float2 texelSize)
             {
+                // Muestras diagonales
+                float depthTL = LinearEyeDepth(SampleSceneDepth(uv + float2(-texelSize.x, texelSize.y)), _ZBufferParams);
+                float depthTR = LinearEyeDepth(SampleSceneDepth(uv + float2(texelSize.x, texelSize.y)), _ZBufferParams);
+                float depthBL = LinearEyeDepth(SampleSceneDepth(uv + float2(-texelSize.x, -texelSize.y)), _ZBufferParams);
+                float depthBR = LinearEyeDepth(SampleSceneDepth(uv + float2(texelSize.x, -texelSize.y)), _ZBufferParams);
                 float depthCenter = LinearEyeDepth(SampleSceneDepth(uv), _ZBufferParams);
-                float depthRight = LinearEyeDepth(SampleSceneDepth(uv + float2(texelSize.x, 0)), _ZBufferParams);
-                float depthUp = LinearEyeDepth(SampleSceneDepth(uv + float2(0, texelSize.y)), _ZBufferParams);
-                float depthLeft = LinearEyeDepth(SampleSceneDepth(uv + float2(-texelSize.x, 0)), _ZBufferParams);
-                float depthDown = LinearEyeDepth(SampleSceneDepth(uv + float2(0, -texelSize.y)), _ZBufferParams);
                 
-                // Calcular diferencia: positivo = vecino más lejos, negativo = vecino más cerca
-                float diffRight = depthRight - depthCenter;
-                float diffLeft = depthLeft - depthCenter;
-                float diffUp = depthUp - depthCenter;
-                float diffDown = depthDown - depthCenter;
+                // Robert's Cross: diferencias cruzadas
+                float diff1 = depthTL - depthBR;
+                float diff2 = depthTR - depthBL;
+                float robertsCross = sqrt(diff1 * diff1 + diff2 * diff2);
                 
-                // Es edge SOLO si hay un vecino MÁS LEJOS con diferencia >= threshold
-                // (esto significa que el pixel actual es el más cercano, así que "recibe" el borde)
-                float edge = 0;
-                if (diffRight >= _DepthThreshold) edge = 1;
-                if (diffLeft >= _DepthThreshold) edge = 1;
-                if (diffUp >= _DepthThreshold) edge = 1;
-                if (diffDown >= _DepthThreshold) edge = 1;
+                // Leer normal para ajustar threshold según ángulo
+                float3 normal = SampleSceneNormals(uv);
+                // En view space, normal.z indica cuánto apunta hacia la cámara
+                // z grande = de frente (threshold normal), z pequeño = inclinado (threshold alto)
+                float viewAngle = 1.0 - saturate(normal.z); // 0 = de frente, 1 = muy inclinado
+                float adjustedThreshold = _DepthThreshold * (1.0 + viewAngle * (_DepthAngleMultiplier - 1.0));
+                
+                // Solo pintar si el centro es el más cercano de todos los vecinos
+                float minNeighbor = min(min(depthTL, depthTR), min(depthBL, depthBR));
+                float isCenterCloser = step(depthCenter, minNeighbor);
+                
+                // Threshold ajustado y decisión final
+                float edge = step(adjustedThreshold, robertsCross) * isCenterCloser;
                 
                 return edge;
             }
@@ -144,35 +154,36 @@ Shader "Custom/PixelArtEdgeDetectionDebug"
                 return 0;
             }
             
-            // Función para calcular edge basado en normales usando tabla de prioridad
+            // Robert's Cross para normales con tabla de prioridad
             float CalculateNormalEdge(float2 uv, float2 texelSize)
             {
+                // Muestras diagonales
+                float3 normalTL = SampleSceneNormals(uv + float2(-texelSize.x, texelSize.y));
+                float3 normalTR = SampleSceneNormals(uv + float2(texelSize.x, texelSize.y));
+                float3 normalBL = SampleSceneNormals(uv + float2(-texelSize.x, -texelSize.y));
+                float3 normalBR = SampleSceneNormals(uv + float2(texelSize.x, -texelSize.y));
                 float3 normalCenter = SampleSceneNormals(uv);
-                float3 normalRight = SampleSceneNormals(uv + float2(texelSize.x, 0));
-                float3 normalUp = SampleSceneNormals(uv + float2(0, texelSize.y));
-                float3 normalLeft = SampleSceneNormals(uv + float2(-texelSize.x, 0));
-                float3 normalDown = SampleSceneNormals(uv + float2(0, -texelSize.y));
                 
                 int faceCenter = ClassifyNormal(normalCenter);
-                int faceRight = ClassifyNormal(normalRight);
-                int faceUp = ClassifyNormal(normalUp);
-                int faceLeft = ClassifyNormal(normalLeft);
-                int faceDown = ClassifyNormal(normalDown);
+                int faceTL = ClassifyNormal(normalTL);
+                int faceTR = ClassifyNormal(normalTR);
+                int faceBL = ClassifyNormal(normalBL);
+                int faceBR = ClassifyNormal(normalBR);
                 
+                // Robert's Cross: diferencias cruzadas usando dot product
+                float3 diff1 = normalTL - normalBR;
+                float3 diff2 = normalTR - normalBL;
+                float robertsCross = sqrt(dot(diff1, diff1) + dot(diff2, diff2));
+                
+                // Solo pintar si supera threshold Y el centro "pierde" contra algún vecino diagonal
                 float edge = 0;
-                
-                // Check diferencia + tabla de prioridad
-                float diffRight = 1.0 - dot(normalCenter, normalRight);
-                if (diffRight >= _NormalThreshold && GetPriority(faceCenter, faceRight) == 1) edge = 1;
-                
-                float diffLeft = 1.0 - dot(normalCenter, normalLeft);
-                if (diffLeft >= _NormalThreshold && GetPriority(faceCenter, faceLeft) == 1) edge = 1;
-                
-                float diffUp = 1.0 - dot(normalCenter, normalUp);
-                if (diffUp >= _NormalThreshold && GetPriority(faceCenter, faceUp) == 1) edge = 1;
-                
-                float diffDown = 1.0 - dot(normalCenter, normalDown);
-                if (diffDown >= _NormalThreshold && GetPriority(faceCenter, faceDown) == 1) edge = 1;
+                if (robertsCross >= _NormalThreshold)
+                {
+                    if (GetPriority(faceCenter, faceTL) == 1) edge = 1;
+                    if (GetPriority(faceCenter, faceTR) == 1) edge = 1;
+                    if (GetPriority(faceCenter, faceBL) == 1) edge = 1;
+                    if (GetPriority(faceCenter, faceBR) == 1) edge = 1;
+                }
                 
                 return edge;
             }
