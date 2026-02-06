@@ -154,5 +154,52 @@ Shader "Custom/ToonPixelShader"
             }
             ENDHLSL
         }
+
+        // NUEVO: DepthNormals pass para edge detection
+        Pass
+        {
+            Name "DepthNormals"
+            Tags { "LightMode" = "DepthNormals" }
+
+            ZWrite On
+            Cull Back
+
+            HLSLPROGRAM
+            #pragma vertex DepthNormalsVertex
+            #pragma fragment DepthNormalsFragment
+
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+
+            struct Attributes
+            {
+                float4 positionOS : POSITION;
+                float3 normalOS : NORMAL;
+            };
+
+            struct Varyings
+            {
+                float4 positionCS : SV_POSITION;
+                float3 normalWS : TEXCOORD0;
+            };
+
+            Varyings DepthNormalsVertex(Attributes input)
+            {
+                Varyings output;
+                
+                VertexPositionInputs positionInputs = GetVertexPositionInputs(input.positionOS.xyz);
+                VertexNormalInputs normalInputs = GetVertexNormalInputs(input.normalOS);
+                
+                output.positionCS = positionInputs.positionCS;
+                output.normalWS = normalInputs.normalWS;
+                
+                return output;
+            }
+
+            float4 DepthNormalsFragment(Varyings input) : SV_Target
+            {
+                return float4(normalize(input.normalWS), 0);
+            }
+            ENDHLSL
+        }
     }
 }

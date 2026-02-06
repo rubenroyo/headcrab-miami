@@ -285,8 +285,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.UniversalAdditionalCameraData
   m_RenderShadows: 1
-  m_RequiresDepthTextureOption: 2
-  m_RequiresOpaqueTextureOption: 2
+  m_RequiresDepthTextureOption: 1
+  m_RequiresOpaqueTextureOption: 1
   m_CameraType: 0
   m_Cameras: []
   m_RendererIndex: -1
@@ -610,8 +610,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_RenderShadows: 1
-  m_RequiresDepthTextureOption: 2
-  m_RequiresOpaqueTextureOption: 2
+  m_RequiresDepthTextureOption: 1
+  m_RequiresOpaqueTextureOption: 1
   m_CameraType: 0
   m_Cameras: []
   m_RendererIndex: -1
@@ -1140,19 +1140,19 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TrajectoryUI
   player: {fileID: 1930528918}
-  dotPrefab: {fileID: 4275388989823556932, guid: 5a59a12ef32a5ac48980da92e389da9b, type: 3}
+  dotPrefab: {fileID: 6105358178407639649, guid: 5a59a12ef32a5ac48980da92e389da9b, type: 3}
   container: {fileID: 865611439}
   canvas: {fileID: 418425209}
   smallDotSprite: {fileID: -855600733, guid: 47811bb9af7f9d44eba8d94e587121cb, type: 3}
   mediumDotSprite: {fileID: -1560991202, guid: 47811bb9af7f9d44eba8d94e587121cb, type: 3}
   largeDotSprite: {fileID: 1200973200, guid: 47811bb9af7f9d44eba8d94e587121cb, type: 3}
-  maxDistance: 10
+  maxDistance: 20
   growSpeed: 15
-  dotSpacing: 0.5
+  dotSpacing: 1
   maxBounces: 3
   wallLayerMask:
     serializedVersion: 2
-    m_Bits: 0
+    m_Bits: 1024
 --- !u!1 &1089638278
 GameObject:
   m_ObjectHideFlags: 0
@@ -1782,7 +1782,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 57b65f5afe651154abc16408c4d610c9, type: 2}
+  - {fileID: 2100000, guid: a00d2eccacee4d74e874842c56ca0203, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -2012,10 +2012,12 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PlayerController
   moveSpeed: 10
   mainCamera: {fileID: 330585545}
-  trajectoryUI: {fileID: 0}
+  trajectoryUI: {fileID: 1048131793}
   cameraFollow: {fileID: 330585548}
-  jumpDuration: 1
-  jumpHeight: 8
+  maxJumpDuration: 1
+  minJumpDuration: 0.2
+  maxJumpHeight: 5
+  minJumpHeight: 1
   possessionCooldown: 0.5
   possessedEnemyMoveSpeed: 20
 --- !u!136 &1930528920
