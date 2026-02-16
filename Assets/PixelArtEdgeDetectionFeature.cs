@@ -10,9 +10,25 @@ public class PixelArtEdgeDetectionFeature : ScriptableRendererFeature
     {
         public Material edgeDetectionMaterial;
         public RenderPassEvent renderPassEvent = RenderPassEvent.BeforeRenderingPostProcessing;
+        
+        [Header("Edge Detection")]
         [Range(0f, 5f)] public float depthThreshold = 1.5f;
         [Range(0f, 5f)] public float normalThreshold = 0.4f;
         [Range(0.5f, 3f)] public float edgeThickness = 1f;
+        
+        [Header("Brightness")]
+        [Range(0f, 1f)] public float darkenAmount = 0.85f;
+        [Range(0f, 1f)] public float brightenAmount = 0.3f;
+        
+        [Header("Hue Shift")]
+        [Tooltip("Hue objetivo para bordes interiores (0=rojo, 0.166=amarillo, 0.333=verde, 0.5=cyan, 0.666=azul, 0.833=magenta)")]
+        [Range(0f, 1f)] public float hueInner = 0.166f;  // Amarillo
+        [Tooltip("Hue objetivo para bordes exteriores")]
+        [Range(0f, 1f)] public float hueOuter = 0.666f;  // Azul
+        [Tooltip("Cantidad de desplazamiento en la rueda de hue")]
+        [Range(0f, 0.5f)] public float hueShiftAmount = 0.1f;
+        
+        [Header("Legacy (unused)")]
         public Color depthEdgeColor = Color.black;
         public Color normalEdgeColor = Color.white;
     }
@@ -86,6 +102,11 @@ public class PixelArtEdgeDetectionFeature : ScriptableRendererFeature
             material.SetFloat("_DepthThreshold", settings.depthThreshold);
             material.SetFloat("_NormalThreshold", settings.normalThreshold);
             material.SetFloat("_EdgeThickness", settings.edgeThickness);
+            material.SetFloat("_DarkenAmount", settings.darkenAmount);
+            material.SetFloat("_BrightenAmount", settings.brightenAmount);
+            material.SetFloat("_HueInner", settings.hueInner);
+            material.SetFloat("_HueOuter", settings.hueOuter);
+            material.SetFloat("_HueShiftAmount", settings.hueShiftAmount);
             material.SetColor("_DepthEdgeColor", settings.depthEdgeColor);
             material.SetColor("_NormalEdgeColor", settings.normalEdgeColor);
 

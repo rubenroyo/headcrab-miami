@@ -11,6 +11,9 @@ Shader "Custom/PixelArtEdgeDetectionDebug"
         _DepthFar ("Depth Far", Range(1, 100)) = 15
         _DarkenAmount ("Darken Amount", Range(0, 1)) = 0.85
         _BrightenAmount ("Brighten Amount", Range(0, 1)) = 0.3
+        _HueInner ("Hue Inner Target", Range(0, 1)) = 0.166  // Amarillo (~60°/360°)
+        _HueOuter ("Hue Outer Target", Range(0, 1)) = 0.666  // Azul (~240°/360°)
+        _HueShiftAmount ("Hue Shift Amount", Range(0, 0.5)) = 0.1
     }
     
     SubShader
@@ -43,6 +46,127 @@ Shader "Custom/PixelArtEdgeDetectionDebug"
             float _DepthFar;
             float _DarkenAmount;
             float _BrightenAmount;
+            float _HueInner;
+            float _HueOuter;
+            float _HueShiftAmount;
+            
+            // ========== RGB <-> HSV Conversion ==========
+            float3 RGBtoHSV(float3 rgb)
+            {
+                float maxC = max(rgb.r, max(rgb.g, rgb.b));
+                float minC = min(rgb.r, min(rgb.g, rgb.b));
+                float delta = maxC - minC;
+                
+                float h = 0;
+                float s = (maxC > 0) ? (delta / maxC) : 0;
+                float v = maxC;
+                
+                if (delta > 0.00001)
+                {
+                    if (maxC == rgb.r)
+                        h = (rgb.g - rgb.b) / delta + (rgb.g < rgb.b ? 6.0 : 0.0);
+                    else if (maxC == rgb.g)
+                        h = (rgb.b - rgb.r) / delta + 2.0;
+                    else
+                        h = (rgb.r - rgb.g) / delta + 4.0;
+                    h /= 6.0;
+                }
+                
+                return float3(h, s, v);
+            }
+            
+            float3 HSVtoRGB(float3 hsv)
+            {
+                float h = hsv.x * 6.0;
+                float s = hsv.y;
+                float v = hsv.z;
+                
+                float c = v * s;
+                float x = c * (1.0 - abs(fmod(h, 2.0) - 1.0));
+                float m = v - c;
+                
+                float3 rgb;
+                if (h < 1.0)      rgb = float3(c, x, 0);
+                else if (h < 2.0) rgb = float3(x, c, 0);
+                else if (h < 3.0) rgb = float3(0, c, x);
+                else if (h < 4.0) rgb = float3(0, x, c);
+                else if (h < 5.0) rgb = float3(x, 0, c);
+                else              rgb = float3(c, 0, x);
+                
+                return rgb + m;
+            }
+            
+            // Calcula distancia con signo en la rueda de hue (circular)
+            // Retorna valor entre -0.5 y 0.5, positivo = sentido horario
+            float HueDistance(float from, float to)
+            {
+                float diff = to - from;
+                // Normalizar a rango [-0.5, 0.5]
+                if (diff > 0.5) diff -= 1.0;
+                if (diff < -0.5) diff += 1.0;
+                return diff;
+            }
+            
+            // Aplica el shift de hue según la lógica de caminos
+            // innerEdge: 1 si es borde interior, outerEdge: 1 si es borde exterior
+            float3 ApplyHueShift(float3 rgb, float innerEdge, float outerEdge)
+            {
+                float3 hsv = RGBtoHSV(rgb);
+                float currentHue = hsv.x;
+                
+                // Calcular distancias con signo hacia cada objetivo
+                float distToInner = HueDistance(currentHue, _HueInner);
+                float distToOuter = HueDistance(currentHue, _HueOuter);
+                
+                // Direcciones de camino corto (signo)
+                float dirInner = sign(distToInner);  // +1 = horario, -1 = antihorario
+                float dirOuter = sign(distToOuter);
+                
+                float hueShift = 0;
+                float valueShift = 0;
+                
+                if (innerEdge > 0.5)
+                {
+                    // Borde interior: subir brillo, mover hacia HueInner
+                    valueShift = _BrightenAmount;
+                    
+                    // Si ambos van en la misma dirección, interior usa camino corto
+                    // Si van en direcciones distintas, cada uno usa su camino corto
+                    if (dirInner == dirOuter && dirInner != 0)
+                    {
+                        // Misma dirección: interior va por camino corto (normal)
+                        hueShift = dirInner * _HueShiftAmount;
+                    }
+                    else
+                    {
+                        // Direcciones distintas: usar camino corto hacia inner
+                        hueShift = dirInner * _HueShiftAmount;
+                    }
+                }
+                
+                if (outerEdge > 0.5)
+                {
+                    // Borde exterior: bajar brillo, mover hacia HueOuter
+                    valueShift = -_DarkenAmount;
+                    
+                    if (dirInner == dirOuter && dirOuter != 0)
+                    {
+                        // Misma dirección: exterior va por camino LARGO (opuesto)
+                        hueShift = -dirOuter * _HueShiftAmount;
+                    }
+                    else
+                    {
+                        // Direcciones distintas: usar camino corto hacia outer
+                        hueShift = dirOuter * _HueShiftAmount;
+                    }
+                }
+                
+                // Aplicar cambios
+                hsv.x = frac(hsv.x + hueShift); // frac para mantener en [0,1]
+                hsv.z = saturate(hsv.z + valueShift);
+                
+                return HSVtoRGB(hsv);
+            }
             
             // Robert's Cross edge detection para depth
             // Usa muestras diagonales: TL, TR, BL, BR
@@ -252,15 +376,14 @@ Shader "Custom/PixelArtEdgeDetectionDebug"
                     return half4(finalColor, baseColor.a);
                 }
                 
-                // MODE 8: RESULTADO FINAL - exteriores (Darken) + interiores (Brighten)
+                // MODE 8: RESULTADO FINAL - Hue shift + brillo
                 if (debugMode == 8)
                 {
                     half4 baseColor = SAMPLE_TEXTURE2D(_BlitTexture, sampler_LinearClamp, uv);
-                    float depthEdge = CalculateDepthEdge(uv, texelSize);
-                    float normalEdge = CalculateNormalEdge(uv, texelSize);
+                    float depthEdge = CalculateDepthEdge(uv, texelSize);   // Borde exterior
+                    float normalEdge = CalculateNormalEdge(uv, texelSize); // Borde interior
                     
-                    half3 finalColor = baseColor.rgb * (1.0 - depthEdge * _DarkenAmount);
-                    finalColor = finalColor + normalEdge * _BrightenAmount;
+                    half3 finalColor = ApplyHueShift(baseColor.rgb, normalEdge, depthEdge);
                     
                     return half4(saturate(finalColor), baseColor.a);
                 }
