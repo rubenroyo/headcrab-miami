@@ -224,8 +224,8 @@ public class PlayerController : MonoBehaviour
 
         HandlePossessedMovement();
 
-        Vector3 pos = possessedEnemy.transform.position + Vector3.up * 3f;
-        transform.position = pos;
+        Vector3 enemyPos = possessedEnemy.transform.position;
+        transform.position = new Vector3(enemyPos.x, 1.625f, enemyPos.z);
 
         RotateTowardsMouse();
     }
@@ -266,7 +266,7 @@ public class PlayerController : MonoBehaviour
             if (jumpTrajectoryPoints != null && jumpTrajectoryPoints.Length > 0)
             {
                 Vector3 finalPos = jumpTrajectoryPoints[^1];
-                transform.position = new Vector3(finalPos.x, 0.5f, finalPos.z); // Forzar Y=0.5
+                transform.position = new Vector3(finalPos.x, 0f, finalPos.z); // Forzar Y=0
             }
 
             if (trajectoryUI != null)
@@ -319,7 +319,7 @@ public class PlayerController : MonoBehaviour
         if (jumpTrajectoryPoints != null && jumpTrajectoryPoints.Length > 0)
         {
             Vector3 finalPos = jumpTrajectoryPoints[^1];
-            transform.position = new Vector3(finalPos.x, 0.5f, finalPos.z);
+            transform.position = new Vector3(finalPos.x, 0f, finalPos.z);
         }
 
         if (trajectoryUI != null)
@@ -334,7 +334,7 @@ public class PlayerController : MonoBehaviour
         possessedEnemy = enemy;
         possessedEnemy.OnPossessed();
 
-        transform.position = enemy.transform.position + Vector3.up * 3f;
+        transform.position = new Vector3(enemy.transform.position.x, 1.625f, enemy.transform.position.z);
 
         if (cameraFollow != null)
         {
@@ -468,17 +468,17 @@ public class PlayerController : MonoBehaviour
             Vector3 groundPoint;
             
             if (Physics.Raycast(groundRay, out RaycastHit hit))
-                groundPoint = new Vector3(hit.point.x, 0.5f, hit.point.z); // Y=0.5 para detección de paredes
+                groundPoint = new Vector3(hit.point.x, 0f, hit.point.z); // Y=0 (nivel del suelo)
             else
-                groundPoint = new Vector3(currentPos.x, 0.5f, currentPos.z);
+                groundPoint = new Vector3(currentPos.x, 0f, currentPos.z);
             
             jumpTrajectoryPoints = new Vector3[] { currentPos, groundPoint };
         }
         else
         {
             Vector3 lastPoint = jumpTrajectoryPoints[^1];
-            // Forzar Y=0.5 en el punto final
-            jumpTrajectoryPoints[^1] = new Vector3(lastPoint.x, 0.5f, lastPoint.z);
+            // Forzar Y=0 en el punto final (nivel del suelo)
+            jumpTrajectoryPoints[^1] = new Vector3(lastPoint.x, 0f, lastPoint.z);
         }
 
         // Calcular duración y altura para el dismount

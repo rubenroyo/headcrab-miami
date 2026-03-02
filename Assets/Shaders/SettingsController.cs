@@ -11,12 +11,36 @@ public class SettingsController : MonoBehaviour
     [Range(1, 10)]
     [SerializeField] private int pixelSize = 4;
     
+    [Header("Sub-Pixel Scrolling")]
+    [Tooltip("Activa el sub-pixel scrolling para movimiento fluido de cámara")]
+    [SerializeField] private bool enableSubPixelScrolling = true;
+    [Tooltip("Número de sub-divisiones por pixel (4 = cuartos de pixel)")]
+    [SerializeField] private int subPixelDivisions = 4;
+    [Tooltip("Margen horizontal extra en pixels grandes (cada lado)")]
+    [SerializeField] private int marginPixelsX = 16;
+    [Tooltip("Margen vertical extra en pixels grandes (cada lado)")]
+    [SerializeField] private int marginPixelsY = 9;
+    [Tooltip("El plane que muestra el render texture")]
+    [SerializeField] private Transform displayPlane;
+    
     private int currentPixelSize = -1;
 
     // Propiedades públicas para acceder desde otros scripts
     public int PixelSize => pixelSize;
+    
+    // Resolución base sin margen (lo que realmente se ve)
     public int RenderWidth => baseResolutionX / pixelSize;
     public int RenderHeight => baseResolutionY / pixelSize;
+    
+    // Resolución total con margen (para sub-pixel scrolling)
+    public int RenderWidthWithMargin => enableSubPixelScrolling ? RenderWidth + (marginPixelsX * 2) : RenderWidth;
+    public int RenderHeightWithMargin => enableSubPixelScrolling ? RenderHeight + (marginPixelsY * 2) : RenderHeight;
+    
+    // Propiedades para sub-pixel scrolling
+    public bool EnableSubPixelScrolling => enableSubPixelScrolling;
+    public int SubPixelDivisions => subPixelDivisions;
+    public Transform DisplayPlane => displayPlane;
+    
     public Camera MainCamera => mainCamera;
 
     // Singleton para acceso fácil
@@ -50,8 +74,9 @@ public class SettingsController : MonoBehaviour
 
         currentPixelSize = pixelSize;
 
-        int newWidth = baseResolutionX / pixelSize;
-        int newHeight = baseResolutionY / pixelSize;
+        // Usar resolución con margen si sub-pixel scrolling está activo
+        int newWidth = RenderWidthWithMargin;
+        int newHeight = RenderHeightWithMargin;
 
         if (renderTexture.IsCreated())
         {
@@ -63,7 +88,7 @@ public class SettingsController : MonoBehaviour
         renderTexture.filterMode = FilterMode.Point;
         renderTexture.Create();
 
-        Debug.Log($"Render Texture actualizada: {newWidth}x{newHeight} (Pixel Size: {pixelSize})");
+        Debug.Log($"Render Texture actualizada: {newWidth}x{newHeight} (Base: {RenderWidth}x{RenderHeight}, Margen: {marginPixelsX}x{marginPixelsY}, SubPixel: {enableSubPixelScrolling})");
     }
 
     public void SetPixelSize(int size)
