@@ -1,0 +1,26 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: abb39c19d36d919438488e45e1b9b59d, type: 3}
+  m_Name: Pistol
+  m_EditorClassIdentifier: Assembly-CSharp::WeaponType
+  weaponName: Pistol
+  bulletsPerMagazine: 10
+  maxBullets: 30
+  fireRate: 0.25
+  bulletSpeed: 25
+  bulletLifetime: 3
+  bulletPrefab: {fileID: 1556133853777372705, guid: e0203543b6d05af459889880526c5186, type: 3}
+  pickupPrefab: {fileID: 919132149155446097, guid: 5fa2f4d6a37fcf14e9d5e32d88d03c90, type: 3}
+  equippedPrefab: {fileID: 919132149155446097, guid: 5fa2f4d6a37fcf14e9d5e32d88d03c90, type: 3}
+  equippedPositionOffset: {x: 0, y: 0.5, z: 0.75}
+  equippedRotationOffset: {x: 0, y: 0, z: 0}
+  muzzleOffset: {x: 0, y: 0.5, z: 0.75}

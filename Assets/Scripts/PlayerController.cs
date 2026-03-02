@@ -42,9 +42,6 @@ public class PlayerController : MonoBehaviour
     private EnemyController possessedEnemy;
     private float lastDismountTime = -999f;
 
-    // Armas
-    private WeaponController weaponController;
-
     // Referencia al SettingsController
     private SettingsController settingsController;
 
@@ -101,11 +98,6 @@ public class PlayerController : MonoBehaviour
 
         if (cameraFollow == null)
             cameraFollow = FindFirstObjectByType<CameraFollow>();
-
-        // Inicializar WeaponController
-        weaponController = GetComponent<WeaponController>();
-        if (weaponController == null)
-            weaponController = gameObject.AddComponent<WeaponController>();
     }
 
     void Update()
@@ -140,14 +132,7 @@ public class PlayerController : MonoBehaviour
         if (Input.GetMouseButtonDown(1))
             EnterAiming();
 
-        if (Input.GetMouseButtonDown(0) && weaponController?.EquippedWeapon != null)
-        {
-            weaponController.TryFire();
-        }
-        if (Input.GetKeyDown(KeyCode.R))
-        {
-            weaponController?.TryReload();
-        }
+        // El jugador sin poseer no puede disparar (es una seta)
     }
 
     void UpdateAiming()
@@ -218,7 +203,7 @@ public class PlayerController : MonoBehaviour
             }
             else
             {
-                weaponController?.TryFire();
+                TryFirePossessedWeapon();
             }
         }
 
@@ -395,6 +380,25 @@ public class PlayerController : MonoBehaviour
 
         Vector3 move = new Vector3(h, 0f, v).normalized;
         possessedEnemy.transform.Translate(move * possessedEnemyMoveSpeed * Time.deltaTime, Space.World);
+    }
+
+    /// <summary>
+    /// Intenta disparar con el arma del enemigo poseído
+    /// </summary>
+    void TryFirePossessedWeapon()
+    {
+        if (possessedEnemy == null) return;
+
+        InventoryHolder inventory = possessedEnemy.GetComponent<InventoryHolder>();
+        if (inventory == null) return;
+
+        // Calcular dirección de disparo hacia el mouse
+        Vector3 mouseWorld = settingsController.GetMouseWorldPosition(mainCamera, Input.mousePosition);
+        Vector3 direction = mouseWorld - possessedEnemy.transform.position;
+        direction.y = 0f;
+        direction.Normalize();
+
+        inventory.TryFire(direction);
     }
 
     void RotateTowardsMouse()
