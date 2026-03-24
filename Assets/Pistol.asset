@@ -13,14 +13,14 @@ MonoBehaviour:
   m_Name: Pistol
   m_EditorClassIdentifier: Assembly-CSharp::WeaponType
   weaponName: Pistol
-  bulletsPerMagazine: 10
-  maxBullets: 30
-  fireRate: 0.25
-  bulletSpeed: 25
+  bulletsPerMagazine: 12
+  maxBullets: 36
+  fireRate: 0.2
+  bulletSpeed: 20
   bulletLifetime: 3
-  bulletPrefab: {fileID: 1556133853777372705, guid: e0203543b6d05af459889880526c5186, type: 3}
-  pickupPrefab: {fileID: 919132149155446097, guid: 5fa2f4d6a37fcf14e9d5e32d88d03c90, type: 3}
+  bulletPrefab: {fileID: 1287490884989471058, guid: c2a4d306c160bef4bb7a0cce49873970, type: 3}
+  pickupPrefab: {fileID: 9109955285980595624, guid: cf9e81af56c063846a34ccfb3e033fd2, type: 3}
   equippedPrefab: {fileID: 919132149155446097, guid: 5fa2f4d6a37fcf14e9d5e32d88d03c90, type: 3}
-  equippedPositionOffset: {x: 0, y: 0.5, z: 0.75}
+  equippedPositionOffset: {x: 0, y: 0, z: 0.5}
   equippedRotationOffset: {x: 0, y: 0, z: 0}
-  muzzleOffset: {x: 0, y: 0.5, z: 0.75}
+  muzzleOffset: {x: 0, y: 0, z: 0.5}
