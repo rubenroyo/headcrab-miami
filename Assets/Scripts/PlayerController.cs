@@ -8,10 +8,17 @@ public enum PlayerState
     Possessing
 }
 
+[RequireComponent(typeof(CharacterController))]
 public class PlayerController : MonoBehaviour
 {
+    // CharacterController para colisiones
+    private CharacterController characterController;
     [Header("Movimiento")]
     [SerializeField] private float moveSpeed = 5f;
+    [SerializeField] private float gravity = 20f;
+    
+    // Velocidad vertical acumulada
+    private float verticalVelocity = 0f;
 
     [Header("Referencias")]
     [SerializeField] private Camera mainCamera;
@@ -80,6 +87,11 @@ public class PlayerController : MonoBehaviour
 
         trajectoryUI?.SetActive(false);
         cameraFollow?.SetJumping(true, currentJumpDuration);
+    }
+
+    void Awake()
+    {
+        characterController = GetComponent<CharacterController>();
     }
 
     void Start()
@@ -367,8 +379,21 @@ public class PlayerController : MonoBehaviour
         float h = Input.GetAxisRaw("Horizontal");
         float v = Input.GetAxisRaw("Vertical");
 
-        Vector3 move = new Vector3(h, 0f, v).normalized;
-        transform.Translate(move * moveSpeed * Time.deltaTime, Space.World);
+        // Aplicar gravedad
+        if (characterController.isGrounded)
+        {
+            // Pequeña fuerza hacia abajo para mantenerlo pegado al suelo
+            verticalVelocity = -2f;
+        }
+        else
+        {
+            verticalVelocity -= gravity * Time.deltaTime;
+        }
+
+        Vector3 move = new Vector3(h, 0f, v).normalized * moveSpeed;
+        move.y = verticalVelocity;
+        
+        characterController.Move(move * Time.deltaTime);
     }
 
     void HandlePossessedMovement()
@@ -379,7 +404,7 @@ public class PlayerController : MonoBehaviour
         float v = Input.GetAxisRaw("Vertical");
 
         Vector3 move = new Vector3(h, 0f, v).normalized;
-        possessedEnemy.transform.Translate(move * possessedEnemyMoveSpeed * Time.deltaTime, Space.World);
+        possessedEnemy.Move(move * possessedEnemyMoveSpeed * Time.deltaTime);
     }
 
     /// <summary>
