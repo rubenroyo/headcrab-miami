@@ -152,7 +152,7 @@ public class PlayerController : MonoBehaviour
         HandleMovement();
         RotateTowardsMouse();
 
-        if (Input.GetMouseButtonDown(0))
+        if (Input.GetKeyDown(KeyCode.Space))
             StartJump();
 
         if (Input.GetMouseButtonUp(1))
@@ -207,16 +207,16 @@ public class PlayerController : MonoBehaviour
             return;
         }
 
-        if (Input.GetMouseButtonDown(0))
+        // Disparar con click izquierdo (solo si no está apuntando)
+        if (Input.GetMouseButtonDown(0) && !Input.GetMouseButton(1))
         {
-            if (Input.GetMouseButton(1))
-            {
-                StartDismount();
-            }
-            else
-            {
-                TryFirePossessedWeapon();
-            }
+            TryFirePossessedWeapon();
+        }
+        
+        // Desmontar con espacio + click derecho
+        if (Input.GetKeyDown(KeyCode.Space) && Input.GetMouseButton(1))
+        {
+            StartDismount();
         }
 
         HandlePossessedMovement();

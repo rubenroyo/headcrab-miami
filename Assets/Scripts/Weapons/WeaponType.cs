@@ -37,6 +37,9 @@ public class WeaponType : ScriptableObject
     [Tooltip("Prefab del arma EQUIPADA (visual en la mano del enemigo, sin física)")]
     public GameObject equippedPrefab;
     
+    [Tooltip("Prefab del cargador en el SUELO (para que la IA pueda detectarlo)")]
+    public GameObject magazinePickupPrefab;
+    
     [Header("Posicionamiento Equipada")]
     [Tooltip("Offset local desde el punto de anclaje del enemigo")]
     public Vector3 equippedPositionOffset = new Vector3(0f, 0.5f, 0.75f);

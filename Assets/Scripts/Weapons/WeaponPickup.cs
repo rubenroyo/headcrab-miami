@@ -3,7 +3,7 @@ using UnityEngine;
 /// <summary>
 /// Permite recoger un arma del suelo.
 /// El enemigo poseído que colisione con esto y pulse "E" equipará el arma.
-/// Contiene datos serializados del arma (tipo + balas).
+/// La IA puede recogerla automáticamente con PickUpByAI().
 /// </summary>
 [RequireComponent(typeof(Collider))]
 public class WeaponPickup : MonoBehaviour
@@ -19,7 +19,8 @@ public class WeaponPickup : MonoBehaviour
     
     public WeaponType WeaponType => weaponType;
     public int CurrentBullets => currentBullets >= 0 ? currentBullets : (weaponType != null ? weaponType.bulletsPerMagazine : 0);
-    public bool CanBePickedUp => !isPickedUp && weaponType != null && nearbyInventory != null;
+    public bool CanBePickedUp => !isPickedUp && weaponType != null;
+    public bool IsPickedUp => isPickedUp;
     
     void Start()
     {
@@ -91,13 +92,29 @@ public class WeaponPickup : MonoBehaviour
     /// </summary>
     public void PickUp()
     {
-        if (!CanBePickedUp) return;
+        if (isPickedUp || weaponType == null || nearbyInventory == null) return;
         
+        PickUpInternal(nearbyInventory);
+    }
+    
+    /// <summary>
+    /// Recoge el arma por la IA (sin necesidad de trigger/pulsar E)
+    /// </summary>
+    public bool PickUpByAI(InventoryHolder inventory)
+    {
+        if (isPickedUp || weaponType == null || inventory == null) return false;
+        
+        PickUpInternal(inventory);
+        return true;
+    }
+    
+    private void PickUpInternal(InventoryHolder inventory)
+    {
         // Crear datos del arma
         WeaponData newWeaponData = new WeaponData(weaponType, CurrentBullets);
         
         // Equipar el arma
-        WeaponData previousWeapon = nearbyInventory.EquipWeapon(newWeaponData);
+        WeaponData previousWeapon = inventory.EquipWeapon(newWeaponData);
         
         // Si tenía un arma anterior, crear pickup donde estaba este
         if (previousWeapon != null && previousWeapon.weaponType != null && previousWeapon.weaponType.pickupPrefab != null)

@@ -33,6 +33,12 @@ public class EnemyAIEditor : Editor
     private SerializedProperty stoppingDistanceProp;
     private SerializedProperty pathUpdateIntervalProp;
     
+    // Combat Distance
+    private SerializedProperty minCombatDistanceProp;
+    private SerializedProperty maxCombatDistanceProp;
+    private SerializedProperty optimalCombatDistanceProp;
+    private SerializedProperty repositionThresholdProp;
+    
     private bool showWaypointsList = true;
 
     void OnEnable()
@@ -60,6 +66,12 @@ public class EnemyAIEditor : Editor
         rotationSpeedProp = serializedObject.FindProperty("rotationSpeed");
         stoppingDistanceProp = serializedObject.FindProperty("stoppingDistance");
         pathUpdateIntervalProp = serializedObject.FindProperty("pathUpdateInterval");
+        
+        // Combat Distance
+        minCombatDistanceProp = serializedObject.FindProperty("minCombatDistance");
+        maxCombatDistanceProp = serializedObject.FindProperty("maxCombatDistance");
+        optimalCombatDistanceProp = serializedObject.FindProperty("optimalCombatDistance");
+        repositionThresholdProp = serializedObject.FindProperty("repositionThreshold");
     }
 
     public override void OnInspectorGUI()
@@ -114,6 +126,15 @@ public class EnemyAIEditor : Editor
         EditorGUILayout.PropertyField(rotationSpeedProp);
         EditorGUILayout.PropertyField(stoppingDistanceProp);
         EditorGUILayout.PropertyField(pathUpdateIntervalProp);
+        
+        EditorGUILayout.Space(10);
+        
+        // === COMBATE A DISTANCIA ===
+        EditorGUILayout.LabelField("Combate a Distancia", EditorStyles.boldLabel);
+        EditorGUILayout.PropertyField(minCombatDistanceProp, new GUIContent("Distancia Mínima"));
+        EditorGUILayout.PropertyField(maxCombatDistanceProp, new GUIContent("Distancia Máxima"));
+        EditorGUILayout.PropertyField(optimalCombatDistanceProp, new GUIContent("Distancia Óptima"));
+        EditorGUILayout.PropertyField(repositionThresholdProp, new GUIContent("Margen Reposición"));
         
         EditorGUILayout.Space(10);
         

@@ -87,13 +87,13 @@ Material:
     - _AlphaToMask: 0
     - _Blend: 0
     - _BlendModePreserveSpecular: 1
-    - _BrightenAmount: 0.02
+    - _BrightenAmount: 0.2
     - _BumpScale: 1
     - _ClearCoatMask: 0
     - _ClearCoatSmoothness: 0
     - _Cull: 2
     - _Cutoff: 0.5
-    - _DarkenAmount: 0.05
+    - _DarkenAmount: 0.5
     - _DebugMode: 8
     - _DepthAngleMultiplier: 4
     - _DepthFar: 20

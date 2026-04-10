@@ -15,10 +15,23 @@ public class EnemyAI : MonoBehaviour
         Idle,           // Quieto esperando
         Wandering,      // Deambulando aleatoriamente
         Patrolling,     // Siguiendo una ruta definida
-        Chasing,        // Persiguiendo al jugador (lo ve)
+        Chasing,        // Persiguiendo al jugador cuerpo a cuerpo (sin arma/balas)
+        CombatEngaged,  // Combate a distancia (tiene arma y balas)
         Investigating,  // Yendo a la última posición conocida (no lo ve)
         Searching,      // Buscando al jugador en la zona (deambular temporal)
-        Returning       // Volviendo a la patrulla/posición original
+        Returning,      // Volviendo a la patrulla/posición original
+        SeekingItem     // Yendo a recoger un arma o cargador
+    }
+    
+    // Prioridades de objetivo (menor = más prioritario)
+    private enum TargetPriority
+    {
+        None = 0,
+        Weapon = 1,         // Prioridad máxima cuando no tiene arma
+        Magazine = 2,       // Prioridad alta cuando no tiene balas
+        WeaponWithAmmo = 3, // Arma con balas (cuando ya tiene arma vacía)
+        Player = 4,         // Perseguir jugador
+        Patrol = 5          // Volver a ruta
     }
 
     [Header("Visión")]
@@ -56,6 +69,12 @@ public class EnemyAI : MonoBehaviour
     [SerializeField] private float acceleration = 999f; // Aceleración instantánea
     [SerializeField] private float stoppingDistance = 0.3f;
     [SerializeField] private float pathUpdateInterval = 0.2f;
+    
+    [Header("Combate a Distancia")]
+    [SerializeField] private float minCombatDistance = 4f; // Distancia mínima al jugador
+    [SerializeField] private float maxCombatDistance = 6f; // Distancia máxima al jugador
+    [SerializeField] private float optimalCombatDistance = 5f; // Distancia ideal
+    [SerializeField] private float repositionThreshold = 0.5f; // Margen antes de reposicionar
 
     // Estado actual
     public AIState CurrentState { get; private set; } = AIState.Idle;
@@ -65,6 +84,7 @@ public class EnemyAI : MonoBehaviour
     // Componentes
     private NavMeshAgent navAgent;
     private EnemyController enemyController;
+    private InventoryHolder inventory;
     
     // Visión
     private Transform playerTransform;
@@ -86,6 +106,16 @@ public class EnemyAI : MonoBehaviour
     
     // Pathfinding
     private float nextPathUpdateTime;
+    
+    // Items y Sistema de Prioridades
+    private Transform targetItem; // Arma o cargador que vamos a recoger
+    private AIState stateBeforeSeekingItem; // Estado al que volver tras recoger item
+    private float itemScanTimer; // Timer para no escanear items cada frame
+    private TargetPriority currentTargetPriority = TargetPriority.None; // Prioridad del objetivo actual
+    private bool isCommittedToTarget = false; // True si está comprometido con un objetivo
+    
+    // Combate
+    private bool isRepositioning = false; // True si está ajustando distancia
 
     public enum AIBehaviorType
     {
@@ -120,6 +150,7 @@ public class EnemyAI : MonoBehaviour
     {
         navAgent = GetComponent<NavMeshAgent>();
         enemyController = GetComponent<EnemyController>();
+        inventory = GetComponent<InventoryHolder>();
         wanderOrigin = transform.position;
     }
 
@@ -176,6 +207,9 @@ public class EnemyAI : MonoBehaviour
         // Actualizar detección de visión
         UpdateVision();
         
+        // Detectar items (armas/cargadores) periódicamente
+        UpdateItemDetection();
+        
         // Rotación instantánea hacia el destino o jugador
         UpdateRotation();
         
@@ -194,6 +228,9 @@ public class EnemyAI : MonoBehaviour
             case AIState.Chasing:
                 UpdateChasing();
                 break;
+            case AIState.CombatEngaged:
+                UpdateCombatEngaged();
+                break;
             case AIState.Investigating:
                 UpdateInvestigating();
                 break;
@@ -202,6 +239,9 @@ public class EnemyAI : MonoBehaviour
                 break;
             case AIState.Returning:
                 UpdateReturning();
+                break;
+            case AIState.SeekingItem:
+                UpdateSeekingItem();
                 break;
         }
     }
@@ -370,11 +410,8 @@ public class EnemyAI : MonoBehaviour
                 
                 if (!wasSeeing) Debug.Log($"[VISION] {name}: VISTO! lastKnown={lastKnownPlayerPosition}");
                 
-                // Si vemos al jugador y no estamos persiguiendo, cambiar estado
-                if (CurrentState != AIState.Chasing)
-                {
-                    SetState(AIState.Chasing);
-                }
+                // La detección del jugador se maneja en EvaluateAndSetBestTarget()
+                // que considera las prioridades de items vs jugador
             }
             else
             {
@@ -387,10 +424,12 @@ public class EnemyAI : MonoBehaviour
         }
 
         CheckLostPlayer:
-        // Si perdimos de vista al jugador mientras lo perseguíamos
-        if (!CanSeePlayer && CurrentState == AIState.Chasing)
+        // Si perdimos de vista al jugador mientras lo perseguíamos o combatíamos
+        if (!CanSeePlayer && (CurrentState == AIState.Chasing || CurrentState == AIState.CombatEngaged))
         {
             Debug.Log($"[VISION] {name}: Cambiando a Investigating. lastKnown={lastKnownPlayerPosition}");
+            isCommittedToTarget = false;
+            currentTargetPriority = TargetPriority.None;
             SetState(AIState.Investigating);
         }
     }
@@ -468,6 +507,14 @@ public class EnemyAI : MonoBehaviour
         navAgent.isStopped = false;
         navAgent.speed = chaseSpeed;
 
+        // Si tenemos arma con balas, cambiar a combate a distancia
+        if (inventory.HasWeapon && inventory.EquippedWeapon.currentBullets > 0)
+        {
+            SetState(AIState.CombatEngaged);
+            return;
+        }
+
+        // Persecución cuerpo a cuerpo (sin arma o sin balas)
         // Actualizar destino periódicamente mientras vemos al jugador
         if (Time.time >= nextPathUpdateTime)
         {
@@ -479,17 +526,119 @@ public class EnemyAI : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// Combate a distancia: mantiene distancia óptima del jugador mientras dispara.
+    /// </summary>
+    private void UpdateCombatEngaged()
+    {
+        // Si ya no tenemos arma o balas, volver a persecución cuerpo a cuerpo
+        if (!inventory.HasWeapon || inventory.EquippedWeapon.currentBullets <= 0)
+        {
+            SetState(AIState.Chasing);
+            return;
+        }
+
+        // Si perdemos de vista al jugador, investigar
+        if (!CanSeePlayer)
+        {
+            SetState(AIState.Investigating);
+            return;
+        }
+
+        navAgent.speed = moveSpeed; // Moverse más lento en combate
+
+        float distanceToPlayer = Vector3.Distance(transform.position, playerTransform.position);
+
+        // Lógica de posicionamiento
+        if (distanceToPlayer < minCombatDistance - repositionThreshold)
+        {
+            // Demasiado cerca - retroceder
+            if (!isRepositioning)
+            {
+                isRepositioning = true;
+                Debug.Log($"[COMBAT] {name}: Demasiado cerca ({distanceToPlayer:F1}m), retrocediendo");
+            }
+            
+            Vector3 retreatDirection = (transform.position - playerTransform.position).normalized;
+            Vector3 retreatTarget = transform.position + retreatDirection * 2f;
+            
+            if (NavMesh.SamplePosition(retreatTarget, out NavMeshHit hit, 3f, NavMesh.AllAreas))
+            {
+                navAgent.SetDestination(hit.position);
+                navAgent.isStopped = false;
+            }
+        }
+        else if (distanceToPlayer > maxCombatDistance + repositionThreshold)
+        {
+            // Demasiado lejos - acercarse
+            if (!isRepositioning)
+            {
+                isRepositioning = true;
+                Debug.Log($"[COMBAT] {name}: Demasiado lejos ({distanceToPlayer:F1}m), acercándose");
+            }
+            
+            // Ir hacia el jugador pero detenerse a distancia óptima
+            Vector3 dirToPlayer = (playerTransform.position - transform.position).normalized;
+            Vector3 targetPos = playerTransform.position - dirToPlayer * optimalCombatDistance;
+            
+            navAgent.SetDestination(targetPos);
+            navAgent.isStopped = false;
+        }
+        else
+        {
+            // En rango óptimo - detenerse y disparar
+            if (isRepositioning)
+            {
+                isRepositioning = false;
+                Debug.Log($"[COMBAT] {name}: En rango óptimo ({distanceToPlayer:F1}m)");
+            }
+            
+            navAgent.isStopped = true;
+        }
+        
+        // Disparar si vemos al jugador (independientemente de si nos movemos)
+        if (CanSeePlayer && playerTransform != null)
+        {
+            TryShootAtPlayer();
+        }
+    }
+    
+    /// <summary>
+    /// Intenta disparar al jugador si tiene línea de visión clara.
+    /// </summary>
+    private void TryShootAtPlayer()
+    {
+        if (!inventory.HasWeapon || inventory.EquippedWeapon.currentBullets <= 0)
+            return;
+        
+        // Calcular dirección al jugador
+        Vector3 eyePosition = transform.position + Vector3.up * 1f;
+        Vector3 playerCenter = playerTransform.position + Vector3.up * 0.5f;
+        Vector3 directionToPlayer = (playerCenter - eyePosition).normalized;
+        
+        // Verificar línea de visión clara (sin obstáculos)
+        float distanceToPlayer = Vector3.Distance(eyePosition, playerCenter);
+        if (Physics.Raycast(eyePosition, directionToPlayer, out RaycastHit hit, distanceToPlayer, obstructionMask))
+        {
+            // Hay un obstáculo, no disparar
+            return;
+        }
+        
+        // Disparar usando el sistema de inventario
+        if (inventory.TryFire(directionToPlayer))
+        {
+            Debug.Log($"[COMBAT] {name}: ¡Disparo!");
+        }
+    }
+
     private void UpdateInvestigating()
     {
         navAgent.isStopped = false;
         navAgent.speed = chaseSpeed; // Ir rápido a investigar
 
-        // Si volvemos a ver al jugador, perseguir
-        if (CanSeePlayer)
-        {
-            SetState(AIState.Chasing);
-            return;
-        }
+        // Si volvemos a ver al jugador, el sistema de prioridades decidirá qué hacer
+        // (Chasing si no tiene arma/balas, CombatEngaged si tiene)
+        // Esto se maneja en EvaluateAndSetBestTarget()
 
         // Asegurar que tenemos destino
         if (!navAgent.hasPath && !navAgent.pathPending)
@@ -612,6 +761,287 @@ public class EnemyAI : MonoBehaviour
         }
     }
 
+    private void UpdateSeekingItem()
+    {
+        navAgent.isStopped = false;
+        navAgent.speed = chaseSpeed; // Ir rápido a recoger items
+
+        // Si el item fue destruido o recogido por otro
+        if (targetItem == null)
+        {
+            Debug.Log($"{name}: Item objetivo ya no existe. Reevaluando prioridades.");
+            isCommittedToTarget = false;
+            currentTargetPriority = TargetPriority.None;
+            EvaluateAndSetBestTarget();
+            return;
+        }
+
+        // Actualizar destino al item (puede haberse movido)
+        if (Time.time >= nextPathUpdateTime)
+        {
+            navAgent.SetDestination(targetItem.position);
+            nextPathUpdateTime = Time.time + pathUpdateInterval;
+        }
+
+        // Verificar si llegamos al item
+        float distanceToItem = Vector3.Distance(transform.position, targetItem.position);
+        if (distanceToItem <= 1.5f)
+        {
+            // Intentar recoger el item
+            WeaponPickup weaponPickup = targetItem.GetComponent<WeaponPickup>();
+            MagazinePickup magazinePickup = targetItem.GetComponent<MagazinePickup>();
+            
+            if (weaponPickup != null && !weaponPickup.IsPickedUp)
+            {
+                weaponPickup.PickUpByAI(inventory);
+                Debug.Log($"{name}: IA recogió arma {weaponPickup.WeaponType.weaponName}");
+            }
+            else if (magazinePickup != null && !magazinePickup.IsPickedUp)
+            {
+                magazinePickup.PickUpByAI(inventory);
+                Debug.Log($"{name}: IA recogió cargador");
+            }
+            
+            targetItem = null;
+            isCommittedToTarget = false;
+            currentTargetPriority = TargetPriority.None;
+            
+            // Reevaluar qué hacer ahora
+            EvaluateAndSetBestTarget();
+        }
+    }
+
+    /// <summary>
+    /// Detecta items en el cono de visión (igual que al jugador) y evalúa prioridades.
+    /// </summary>
+    private void UpdateItemDetection()
+    {
+        // Escanear cada 0.3 segundos para performance
+        itemScanTimer -= Time.deltaTime;
+        if (itemScanTimer > 0f) return;
+        itemScanTimer = 0.3f;
+        
+        // Si ya estamos comprometidos con un objetivo, solo cambiar si aparece algo de mayor prioridad
+        // o si el objetivo actual ya no es válido
+        
+        EvaluateAndSetBestTarget();
+    }
+
+    /// <summary>
+    /// Evalúa el mejor objetivo según las prioridades y el estado actual del enemigo.
+    /// Prioridades:
+    /// - Sin arma ni balas: Arma > Cargador > Jugador > Ruta
+    /// - Con arma sin balas: Cargador > Arma con balas > Jugador > Ruta
+    /// - Con arma y balas: Jugador > Cargador > Arma con balas > Ruta
+    /// </summary>
+    private void EvaluateAndSetBestTarget()
+    {
+        bool hasWeapon = inventory.HasWeapon;
+        bool hasAmmo = hasWeapon && inventory.EquippedWeapon.currentBullets > 0;
+        bool needsAmmo = hasWeapon && inventory.EquippedWeapon.currentBullets < inventory.EquippedWeapon.weaponType.maxBullets;
+        
+        // Buscar items visibles (usando cono de visión)
+        Transform bestWeapon = null;
+        Transform bestWeaponWithAmmo = null;
+        Transform bestMagazine = null;
+        float bestWeaponDist = float.MaxValue;
+        float bestWeaponWithAmmoDist = float.MaxValue;
+        float bestMagazineDist = float.MaxValue;
+        
+        // Buscar todos los pickups en la escena
+        WeaponPickup[] allWeapons = FindObjectsByType<WeaponPickup>(FindObjectsSortMode.None);
+        MagazinePickup[] allMagazines = FindObjectsByType<MagazinePickup>(FindObjectsSortMode.None);
+        
+        // Evaluar armas
+        foreach (WeaponPickup weapon in allWeapons)
+        {
+            if (weapon.IsPickedUp) continue;
+            
+            if (CanSeeObject(weapon.transform, out float dist))
+            {
+                bool weaponHasAmmo = weapon.CurrentBullets > 0;
+                
+                if (weaponHasAmmo && dist < bestWeaponWithAmmoDist)
+                {
+                    bestWeaponWithAmmo = weapon.transform;
+                    bestWeaponWithAmmoDist = dist;
+                }
+                
+                if (dist < bestWeaponDist)
+                {
+                    bestWeapon = weapon.transform;
+                    bestWeaponDist = dist;
+                }
+            }
+        }
+        
+        // Evaluar cargadores (solo si tenemos arma)
+        if (hasWeapon)
+        {
+            foreach (MagazinePickup magazine in allMagazines)
+            {
+                if (magazine.IsPickedUp) continue;
+                
+                // Solo cargadores compatibles
+                if (magazine.WeaponType != inventory.EquippedWeapon.weaponType) continue;
+                
+                if (CanSeeObject(magazine.transform, out float dist))
+                {
+                    if (dist < bestMagazineDist)
+                    {
+                        bestMagazine = magazine.transform;
+                        bestMagazineDist = dist;
+                    }
+                }
+            }
+        }
+        
+        // Determinar las prioridades según el estado
+        TargetPriority newPriority = TargetPriority.Patrol;
+        Transform newTarget = null;
+        AIState newState = CurrentState;
+        
+        if (!hasWeapon)
+        {
+            // SIN ARMA: Arma > Cargador > Jugador > Ruta
+            if (bestWeapon != null)
+            {
+                newPriority = TargetPriority.Weapon;
+                newTarget = bestWeapon;
+                newState = AIState.SeekingItem;
+            }
+            else if (bestMagazine != null)
+            {
+                newPriority = TargetPriority.Magazine;
+                newTarget = bestMagazine;
+                newState = AIState.SeekingItem;
+            }
+            else if (CanSeePlayer)
+            {
+                newPriority = TargetPriority.Player;
+                newTarget = playerTransform;
+                newState = AIState.Chasing;
+            }
+        }
+        else if (!hasAmmo)
+        {
+            // CON ARMA SIN BALAS: Cargador > Arma con balas > Jugador > Ruta
+            if (bestMagazine != null)
+            {
+                newPriority = TargetPriority.Magazine;
+                newTarget = bestMagazine;
+                newState = AIState.SeekingItem;
+            }
+            else if (bestWeaponWithAmmo != null)
+            {
+                newPriority = TargetPriority.WeaponWithAmmo;
+                newTarget = bestWeaponWithAmmo;
+                newState = AIState.SeekingItem;
+            }
+            else if (CanSeePlayer)
+            {
+                newPriority = TargetPriority.Player;
+                newTarget = playerTransform;
+                newState = AIState.Chasing;
+            }
+        }
+        else
+        {
+            // CON ARMA Y BALAS: Jugador > Cargador > Arma con balas > Ruta
+            if (CanSeePlayer)
+            {
+                newPriority = TargetPriority.Player;
+                newTarget = playerTransform;
+                newState = AIState.CombatEngaged;
+            }
+            else if (needsAmmo && bestMagazine != null)
+            {
+                newPriority = TargetPriority.Magazine;
+                newTarget = bestMagazine;
+                newState = AIState.SeekingItem;
+            }
+            else if (needsAmmo && bestWeaponWithAmmo != null)
+            {
+                newPriority = TargetPriority.WeaponWithAmmo;
+                newTarget = bestWeaponWithAmmo;
+                newState = AIState.SeekingItem;
+            }
+        }
+        
+        // Solo cambiar de objetivo si:
+        // 1. No estamos comprometidos con nada
+        // 2. El nuevo objetivo tiene mayor prioridad (menor número)
+        // 3. El objetivo actual ya no existe
+        bool shouldSwitch = !isCommittedToTarget || 
+                           (newPriority < currentTargetPriority) ||
+                           (targetItem == null && CurrentState == AIState.SeekingItem);
+        
+        if (shouldSwitch && newTarget != null && newPriority != TargetPriority.Patrol)
+        {
+            if (newPriority != currentTargetPriority || targetItem != newTarget)
+            {
+                Debug.Log($"[PRIORITY] {name}: Cambiando a prioridad {newPriority} ({newTarget.name})");
+            }
+            
+            currentTargetPriority = newPriority;
+            isCommittedToTarget = true;
+            
+            if (newState == AIState.SeekingItem)
+            {
+                stateBeforeSeekingItem = CurrentState == AIState.SeekingItem ? stateBeforeSeekingItem : CurrentState;
+                targetItem = newTarget;
+            }
+            
+            if (newState != CurrentState)
+            {
+                SetState(newState);
+            }
+        }
+        else if (newPriority == TargetPriority.Patrol && CurrentState == AIState.SeekingItem)
+        {
+            // No hay nada que buscar, volver al comportamiento anterior
+            isCommittedToTarget = false;
+            currentTargetPriority = TargetPriority.None;
+            SetState(stateBeforeSeekingItem);
+        }
+    }
+
+    /// <summary>
+    /// Verifica si el enemigo puede ver un objeto (usando el cono de visión y raycasts).
+    /// </summary>
+    private bool CanSeeObject(Transform obj, out float distance)
+    {
+        distance = 0f;
+        if (obj == null) return false;
+        
+        Vector3 directionToObj = obj.position - transform.position;
+        distance = directionToObj.magnitude;
+        
+        // Verificar distancia
+        if (distance > viewDistance) return false;
+        
+        // Verificar ángulo (cono de visión)
+        directionToObj.Normalize();
+        float angleToObj = Vector3.Angle(transform.forward, directionToObj);
+        if (angleToObj > viewAngle / 2f) return false;
+        
+        // Verificar línea de visión (raycast para obstáculos)
+        Vector3 eyePosition = transform.position + Vector3.up * 1f;
+        Vector3 objPosition = obj.position + Vector3.up * 0.5f;
+        Vector3 dirToObj = (objPosition - eyePosition).normalized;
+        
+        if (Physics.Raycast(eyePosition, dirToObj, out RaycastHit hit, distance, obstructionMask))
+        {
+            // Si el raycast golpea algo que no es el objeto, está obstruido
+            if (hit.transform != obj && !hit.transform.IsChildOf(obj))
+            {
+                return false;
+            }
+        }
+        
+        return true;
+    }
+
     #endregion
 
     #region Helper Methods
@@ -629,6 +1059,12 @@ public class EnemyAI : MonoBehaviour
         {
             case AIState.Chasing:
                 navAgent.isStopped = false;
+                isRepositioning = false;
+                break;
+            case AIState.CombatEngaged:
+                navAgent.isStopped = false;
+                isRepositioning = false;
+                Debug.Log($"{name}: Entrando en combate a distancia");
                 break;
             case AIState.Patrolling:
                 if (patrolRoute.Count > 0 && patrolRoute[currentPatrolIndex].point != null)
@@ -656,6 +1092,14 @@ public class EnemyAI : MonoBehaviour
             case AIState.Wandering:
                 nextWanderTime = 0f; // Forzar búsqueda de punto inmediata
                 navAgent.isStopped = false;
+                break;
+            case AIState.SeekingItem:
+                navAgent.isStopped = false;
+                if (targetItem != null)
+                {
+                    navAgent.SetDestination(targetItem.position);
+                    Debug.Log($"{name}: Yendo a recoger item en {targetItem.position}");
+                }
                 break;
         }
     }

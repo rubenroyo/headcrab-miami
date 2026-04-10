@@ -89,8 +89,8 @@ MonoBehaviour:
     depthThreshold: 1
     normalThreshold: 1
     edgeThickness: 1
-    darkenAmount: 0.05
-    brightenAmount: 0.02
+    darkenAmount: 0.5
+    brightenAmount: 0.2
     hueInner: 0.166
     hueOuter: 0.666
     hueShiftAmount: 0.005

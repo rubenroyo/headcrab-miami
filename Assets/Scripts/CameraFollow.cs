@@ -531,15 +531,13 @@ public class CameraFollow : MonoBehaviour
     void EnterAimMode()
     {
         isAiming = true;
-        Time.timeScale = slowTimeScale;
-        Time.fixedDeltaTime = 0.02f * Time.timeScale;
+        // Ya no ralentiza el tiempo al apuntar
     }
 
     void ExitAimMode()
     {
         isAiming = false;
-        Time.timeScale = 1f;
-        Time.fixedDeltaTime = 0.02f;
+        // Ya no restaura el tiempo al dejar de apuntar
     }
 
     /// <summary>

@@ -152,8 +152,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0a8843481f07c7e41b4f61efa0bf9b13, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EnemyAI
-  viewAngle: 60
-  viewDistance: 4
+  viewAngle: 100
+  viewDistance: 6
   obstructionMask:
     serializedVersion: 2
     m_Bits: 1024
@@ -164,17 +164,24 @@ MonoBehaviour:
   visionConeColor: {r: 1, g: 0, b: 0, a: 0.3}
   visionConeSegments: 20
   defaultBehavior: 0
-  losePlayerTime: 5
+  searchDuration: 5
   wanderRadius: 10
   wanderInterval: 3
   minWanderDistance: 2
+  patrolRouteObject: {fileID: 0}
+  patrolRouteId: 
   patrolRoute: []
   loopPatrol: 1
   moveSpeed: 3.5
   chaseSpeed: 5
   rotationSpeed: 120
+  acceleration: 999
   stoppingDistance: 0.5
   pathUpdateInterval: 0.2
+  itemDetectionRadius: 8
+  itemMask:
+    serializedVersion: 2
+    m_Bits: 2048
 --- !u!1001 &2784216284595861174
 PrefabInstance:
   m_ObjectHideFlags: 0
