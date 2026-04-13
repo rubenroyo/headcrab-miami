@@ -191,6 +191,12 @@ public class EnemyAI : MonoBehaviour
 
     void Update()
     {
+        // No hacer nada si el agente no está sobre el NavMesh
+        if (navAgent == null || !navAgent.isOnNavMesh)
+        {
+            return;
+        }
+
         // No hacer nada si está poseído
         if (enemyController.IsPossessed)
         {
