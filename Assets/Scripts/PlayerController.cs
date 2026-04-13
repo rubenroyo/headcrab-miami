@@ -22,10 +22,10 @@ public class PlayerController : MonoBehaviour
 
     [Header("Referencias")]
     [SerializeField] private Camera mainCamera;
-    [SerializeField] private TrajectoryUI trajectoryUI;
     [SerializeField] private CameraFollow cameraFollow;
     [SerializeField] private FirstPersonCamera firstPersonCamera;
     [SerializeField] private ThirdPersonOrbitCamera thirdPersonCamera;
+    [SerializeField] private CinemachineCameraController cinemachineCamera;
     [SerializeField] private JumpTrajectoryVisualizer jumpTrajectoryVisualizer;
     
     [Header("Rotación del jugador")]
@@ -112,7 +112,6 @@ public class PlayerController : MonoBehaviour
         // Cachear distancias para interpolación
         CacheTrajectoryDistances();
 
-        trajectoryUI?.SetActive(false);
         cameraFollow?.SetJumping(true, currentJumpDuration);
     }
 
@@ -135,21 +134,40 @@ public class PlayerController : MonoBehaviour
         else if (mainCamera == null)
             mainCamera = Camera.main;
 
-        if (trajectoryUI == null)
-            trajectoryUI = FindFirstObjectByType<TrajectoryUI>();
-
         if (cameraFollow == null)
             cameraFollow = FindFirstObjectByType<CameraFollow>();
         
         if (thirdPersonCamera == null)
             thirdPersonCamera = FindFirstObjectByType<ThirdPersonOrbitCamera>();
         
+        if (cinemachineCamera == null)
+            cinemachineCamera = FindFirstObjectByType<CinemachineCameraController>();
+        
         if (jumpTrajectoryVisualizer == null)
             jumpTrajectoryVisualizer = FindFirstObjectByType<JumpTrajectoryVisualizer>();
+        
+        // Bloquear y ocultar cursor
+        Cursor.lockState = CursorLockMode.Locked;
+        Cursor.visible = false;
     }
 
     void Update()
     {
+        // Toggle cursor con Escape
+        if (Input.GetKeyDown(KeyCode.Escape))
+        {
+            bool isLocked = Cursor.lockState == CursorLockMode.Locked;
+            Cursor.lockState = isLocked ? CursorLockMode.None : CursorLockMode.Locked;
+            Cursor.visible = isLocked;
+        }
+        
+        // Re-bloquear cursor al hacer clic
+        if (Cursor.lockState == CursorLockMode.None && Input.GetMouseButtonDown(0))
+        {
+            Cursor.lockState = CursorLockMode.Locked;
+            Cursor.visible = false;
+        }
+        
         switch (CurrentState)
         {
             case PlayerState.Normal:
@@ -255,7 +273,9 @@ public class PlayerController : MonoBehaviour
         }
         
         // Actualizar progreso en la cámara
-        if (thirdPersonCamera != null)
+        if (cinemachineCamera != null)
+            cinemachineCamera.UpdateJumpProgress(progress);
+        else if (thirdPersonCamera != null)
             thirdPersonCamera.UpdateJumpProgress(progress);
         
         // Verificar colisión con enemigos para posesión
@@ -391,10 +411,10 @@ public class PlayerController : MonoBehaviour
         Time.fixedDeltaTime = 0.02f * aimTimeScale;
         
         // Activar modo aim en la cámara
-        if (thirdPersonCamera != null)
+        if (cinemachineCamera != null)
+            cinemachineCamera.EnterAimMode();
+        else if (thirdPersonCamera != null)
             thirdPersonCamera.EnterAimMode();
-        else
-            Debug.LogWarning("[Player] thirdPersonCamera is NULL");
         
         // Activar visualizador de trayectoria
         if (jumpTrajectoryVisualizer != null)
@@ -418,7 +438,9 @@ public class PlayerController : MonoBehaviour
         Time.fixedDeltaTime = 0.02f;
         
         // Desactivar modo aim en la cámara
-        if (thirdPersonCamera != null)
+        if (cinemachineCamera != null)
+            cinemachineCamera.ExitAimMode();
+        else if (thirdPersonCamera != null)
             thirdPersonCamera.ExitAimMode();
         
         // Desactivar visualizador de trayectoria
@@ -476,7 +498,9 @@ public class PlayerController : MonoBehaviour
             jumpTrajectoryVisualizer.SetActive(false);
         
         // Activar modo salto en la cámara
-        if (thirdPersonCamera != null)
+        if (cinemachineCamera != null)
+            cinemachineCamera.EnterJumpMode();
+        else if (thirdPersonCamera != null)
             thirdPersonCamera.EnterJumpMode();
         
         // Rotar jugador hacia la dirección inicial
@@ -503,7 +527,12 @@ public class PlayerController : MonoBehaviour
             characterController.enabled = true;
         
         // Salir del modo salto de la cámara y disparar shake
-        if (thirdPersonCamera != null)
+        if (cinemachineCamera != null)
+        {
+            cinemachineCamera.ExitJumpMode();
+            cinemachineCamera.TriggerLandingShake();
+        }
+        else if (thirdPersonCamera != null)
         {
             thirdPersonCamera.ExitJumpMode();
             thirdPersonCamera.TriggerLandingShake();
@@ -516,9 +545,6 @@ public class PlayerController : MonoBehaviour
             {
                 transform.position = jumpTrajectoryPoints[jumpTrajectoryPoints.Length - 1];
             }
-
-            if (trajectoryUI != null)
-                trajectoryUI.SetActive(true);
 
             if (cameraFollow != null)
                 cameraFollow.SetJumping(false, 0f);
@@ -577,9 +603,6 @@ public class PlayerController : MonoBehaviour
             transform.position = new Vector3(finalPos.x, 0f, finalPos.z);
         }
 
-        if (trajectoryUI != null)
-            trajectoryUI.SetActive(true);
-
         if (cameraFollow != null)
             cameraFollow.SetJumping(false, 0f);
 
@@ -600,6 +623,10 @@ public class PlayerController : MonoBehaviour
             if (wasHoldingAim)
                 cameraFollow.ForceAimMode(true);
         }
+        
+        // Actualizar target de Cinemachine
+        if (cinemachineCamera != null)
+            cinemachineCamera.EnterPossessionMode(enemy.transform);
     }
 
     /// <summary>
@@ -628,6 +655,10 @@ public class PlayerController : MonoBehaviour
             cameraFollow.SetTarget(transform);
             cameraFollow.SetPossessedMode(false);
         }
+        
+        // Restaurar target de Cinemachine
+        if (cinemachineCamera != null)
+            cinemachineCamera.ExitPossessionMode(transform);
     }
 
     // ---------------- HELPERS ----------------
@@ -652,15 +683,17 @@ public class PlayerController : MonoBehaviour
         Vector3 forward;
         Vector3 right;
         
-        if (thirdPersonCamera != null)
+        // Usar la cámara principal (funciona tanto con Cinemachine como con el sistema antiguo)
+        Camera cam = mainCamera != null ? mainCamera : Camera.main;
+        if (cam != null)
         {
             // Tercera persona: movimiento relativo a la cámara
-            forward = thirdPersonCamera.transform.forward;
-            right = thirdPersonCamera.transform.right;
+            forward = cam.transform.forward;
+            right = cam.transform.right;
         }
         else
         {
-            // Primera persona: movimiento relativo al jugador
+            // Fallback: movimiento relativo al jugador
             forward = transform.forward;
             right = transform.right;
         }
@@ -673,8 +706,9 @@ public class PlayerController : MonoBehaviour
         
         Vector3 inputDirection = (forward * v + right * h);
         
-        // Rotar el jugador (solo en tercera persona)
-        if (thirdPersonCamera != null)
+        // Rotar el jugador (en tercera persona)
+        bool isThirdPerson = cinemachineCamera != null || thirdPersonCamera != null;
+        if (isThirdPerson)
         {
             if (CurrentState == PlayerState.Aiming)
             {
@@ -774,11 +808,6 @@ public class PlayerController : MonoBehaviour
 
         lastDismountTime = Time.time;
         ReleasePossessedEnemy();
-
-        if (trajectoryUI != null)
-        {
-            jumpTrajectoryPoints = trajectoryUI.GetTrajectoryPoints();
-        }
         
         if (jumpTrajectoryPoints == null || jumpTrajectoryPoints.Length == 0)
         {
@@ -817,8 +846,5 @@ public class PlayerController : MonoBehaviour
             cameraFollow.SetPossessedMode(false);
             cameraFollow.SetJumping(true, currentJumpDuration);
         }
-        
-        if (trajectoryUI != null)
-            trajectoryUI.SetActive(false);
     }
 }

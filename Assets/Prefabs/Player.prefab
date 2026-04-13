@@ -10,7 +10,7 @@ GameObject:
   m_Component:
   - component: {fileID: 4020663746115899179}
   m_Layer: 8
-  m_Name: CameraHolder
+  m_Name: CameraTarget
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -90,18 +90,45 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PlayerController
   moveSpeed: 4
   gravity: 20
-  rotationSpeed: 10
   mainCamera: {fileID: 0}
   trajectoryUI: {fileID: 0}
   cameraFollow: {fileID: 0}
   firstPersonCamera: {fileID: 0}
   thirdPersonCamera: {fileID: 0}
-  maxJumpDuration: 1
-  minJumpDuration: 0.2
-  maxJumpHeight: 5
-  minJumpHeight: 1
+  cinemachineCamera: {fileID: 0}
+  jumpTrajectoryVisualizer: {fileID: 0}
+  rotationSpeed: 10
+  jumpWindUpDuration: 0.08
+  jumpWindUpTimeScale: 0.1
+  jumpFlightTimeScale: 1.2
+  jumpSpeedCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 1
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
   possessionCooldown: 0.5
   possessedEnemyMoveSpeed: 8
+  aimTimeScale: 0.3
+  timeTransitionSpeed: 10
 --- !u!143 &8110589190728866437
 CharacterController:
   m_ObjectHideFlags: 0
