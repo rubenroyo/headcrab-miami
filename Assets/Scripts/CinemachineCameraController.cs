@@ -49,6 +49,30 @@ public class CinemachineCameraController : MonoBehaviour
     
     [SerializeField] private float landingShakeIntensity = 0.3f;
     
+    [Header("Possession Settings (First Person)")]
+    [Tooltip("Altura de los ojos relativa al pivot del enemigo (para primera persona)")]
+    [SerializeField] private float eyeHeightOffset = 1.6f;
+    
+    [Tooltip("Sensibilidad del ratón en primera persona")]
+    [SerializeField] private float fpMouseSensitivity = 2f;
+    
+    [Tooltip("Sensibilidad vertical del ratón")]
+    [SerializeField] private float fpVerticalSensitivity = 2f;
+    
+    // Referencia al controlador de lag (se busca automáticamente en vcamJump)
+    private JumpCameraLagController jumpLagController;
+    
+    // Controlador de primera persona para posesión
+    private FirstPersonPossessionController fpController;
+    
+    // Vista del arma en primera persona
+    private FPSWeaponView fpsWeaponView;
+    
+    // Transform temporal para los ojos del enemigo poseído
+    private Transform possessionEyePoint;
+    private Transform currentPossessedTarget;
+    private InventoryHolder currentPossessedInventory;
+    
     // Estado interno
     private CameraState currentState = CameraState.Normal;
     private float jumpProgress = 0f;
@@ -70,12 +94,74 @@ public class CinemachineCameraController : MonoBehaviour
     public CameraState CurrentState => currentState;
     public bool IsAiming => currentState == CameraState.Aiming;
     public bool IsJumping => currentState == CameraState.Jumping;
+    public bool IsPossessing => currentState == CameraState.Possessing;
+    
+    /// <summary>
+    /// Referencia al controlador de primera persona (para que PlayerController pueda obtener direcciones de movimiento)
+    /// </summary>
+    public FirstPersonPossessionController FirstPersonController => fpController;
+    
+    /// <summary>
+    /// Devuelve la cámara virtual de posesión (para modificar FOV desde PlayerController)
+    /// </summary>
+    public CinemachineCamera GetActivePossessionCamera()
+    {
+        return currentState == CameraState.Possessing ? vcamPossession : null;
+    }
+    
+    /// <summary>
+    /// Actualiza el estado de movimiento del arma FPS (para animación de bob)
+    /// </summary>
+    public void UpdateFPSWeaponMovement(bool isMoving, bool isSprinting)
+    {
+        if (fpsWeaponView != null)
+        {
+            fpsWeaponView.SetMovementState(isMoving, isSprinting);
+        }
+    }
+    
+    /// <summary>
+    /// Actualiza el estado de apuntado ADS del arma FPS
+    /// </summary>
+    public void SetADSState(bool isAiming)
+    {
+        if (fpsWeaponView != null)
+        {
+            fpsWeaponView.SetADSState(isAiming);
+        }
+    }
+    
+    /// <summary>
+    /// Dispara la animación de recoil del arma FPS
+    /// </summary>
+    public void TriggerWeaponRecoil()
+    {
+        if (fpsWeaponView != null)
+        {
+            fpsWeaponView.PlayRecoil();
+        }
+    }
     
     void Awake()
     {
         // Buscar impulse source si no está asignado
         if (impulseSource == null)
             impulseSource = GetComponent<CinemachineImpulseSource>();
+        
+        // Asegurar que las cámaras tengan CinemachineImpulseListener para el screen shake
+        EnsureImpulseListener(vcamThirdPerson);
+        EnsureImpulseListener(vcamAim);
+        EnsureImpulseListener(vcamJump);
+        EnsureImpulseListener(vcamPossession);
+        
+        // Buscar controller de lag en vcamJump
+        if (vcamJump != null)
+            jumpLagController = vcamJump.GetComponent<JumpCameraLagController>();
+        
+        // Crear o buscar el controlador de primera persona
+        fpController = GetComponent<FirstPersonPossessionController>();
+        if (fpController == null)
+            fpController = gameObject.AddComponent<FirstPersonPossessionController>();
         
         // Inicializar prioridades
         SetAllInactive();
@@ -98,6 +184,12 @@ public class CinemachineCameraController : MonoBehaviour
         
         // Configurar targets en todas las cámaras
         SetAllTargets(playerTarget);
+    }
+    
+    void OnDestroy()
+    {
+        // Limpiar el punto de ojos temporal
+        CleanupPossessionEyePoint();
     }
     
     void Update()
@@ -177,11 +269,15 @@ public class CinemachineCameraController : MonoBehaviour
     }
     
     /// <summary>
-    /// Actualizar progreso del salto (0-1) para efectos de FOV
+    /// Actualizar progreso del salto (0-1) para efectos de FOV y lag
     /// </summary>
     public void UpdateJumpProgress(float progress)
     {
         jumpProgress = Mathf.Clamp01(progress);
+        
+        // Comunicar progreso al controlador de lag
+        if (jumpLagController != null)
+            jumpLagController.UpdateJumpProgress(jumpProgress);
     }
     
     /// <summary>
@@ -205,21 +301,124 @@ public class CinemachineCameraController : MonoBehaviour
     }
     
     /// <summary>
-    /// Entrar en modo posesión (seguir enemigo)
+    /// Entrar en modo posesión - PRIMERA PERSONA instantánea a la altura de los ojos
     /// </summary>
     public void EnterPossessionMode(Transform enemyTarget)
     {
         currentState = CameraState.Possessing;
+        currentPossessedTarget = enemyTarget;
         
-        // Configurar cámara de posesión para seguir al enemigo
+        // Crear/actualizar el punto de ojos para primera persona
+        CreateOrUpdateEyePoint(enemyTarget);
+        
+        // Configurar cámara de posesión para primera persona
         if (vcamPossession != null)
         {
-            vcamPossession.Follow = enemyTarget;
-            vcamPossession.LookAt = enemyTarget;
+            // El Follow es el punto de ojos (posición de la cámara)
+            vcamPossession.Follow = possessionEyePoint;
+            // LookAt null para primera persona pura (la orientación viene del Follow)
+            vcamPossession.LookAt = null;
+            
+            // TRANSICIÓN INSTANTÁNEA: resetear el estado de la cámara
+            vcamPossession.PreviousStateIsValid = false;
+            
+            // Desactivar cualquier CinemachineOrbitalFollow si existe
+            var orbitalFollow = vcamPossession.GetComponent<CinemachineOrbitalFollow>();
+            if (orbitalFollow != null)
+            {
+                orbitalFollow.enabled = false;
+            }
+            
+            // Asegurar que CinemachineFollow (si existe) esté configurado para primera persona
+            var follow = vcamPossession.GetComponent<CinemachineFollow>();
+            if (follow != null)
+            {
+                follow.FollowOffset = Vector3.zero; // Sin offset - cámara exactamente en los ojos
+                var trackerSettings = follow.TrackerSettings;
+                trackerSettings.PositionDamping = Vector3.zero; // Sin suavizado - instantáneo
+                follow.TrackerSettings = trackerSettings;
+            }
+            
+            // Asegurar que CinemachineRotateWithFollowTarget esté presente y activo
+            // Este componente hace que la cámara rote igual que el eye point
+            var rotateWithFollow = vcamPossession.GetComponent<CinemachineRotateWithFollowTarget>();
+            if (rotateWithFollow == null)
+            {
+                rotateWithFollow = vcamPossession.gameObject.AddComponent<CinemachineRotateWithFollowTarget>();
+            }
+            rotateWithFollow.enabled = true;
+            rotateWithFollow.Damping = 0f; // Sin suavizado para respuesta inmediata
         }
         
-        SwitchToCamera(vcamPossession);
-        Debug.Log("[CinemachineCamera] EnterPossessionMode");
+        // Activar control de primera persona (mouse look)
+        if (fpController != null)
+        {
+            fpController.MouseSensitivity = fpMouseSensitivity;
+            fpController.VerticalSensitivity = fpVerticalSensitivity;
+            fpController.Activate(enemyTarget, possessionEyePoint);
+        }
+        
+        // Activar vista de arma FPS
+        ActivateFPSWeaponView(enemyTarget);
+        
+        SwitchToCameraInstant(vcamPossession);
+        Debug.Log($"[CinemachineCamera] EnterPossessionMode - First Person at eye height {eyeHeightOffset}m");
+    }
+    
+    /// <summary>
+    /// Activa la vista del arma en primera persona
+    /// </summary>
+    private void ActivateFPSWeaponView(Transform enemyTarget)
+    {
+        // Obtener el inventario del enemigo
+        currentPossessedInventory = enemyTarget.GetComponent<InventoryHolder>();
+        
+        if (currentPossessedInventory == null) return;
+        
+        // Ocultar el arma de tercera persona
+        currentPossessedInventory.SetWeaponVisualVisible(false);
+        
+        // Crear o obtener el FPSWeaponView
+        if (fpsWeaponView == null)
+        {
+            fpsWeaponView = gameObject.AddComponent<FPSWeaponView>();
+        }
+        
+        // Activar con el inventario y el punto de ojos
+        fpsWeaponView.Activate(currentPossessedInventory, possessionEyePoint);
+    }
+    
+    /// <summary>
+    /// Crea o actualiza el punto de ojos para la posesión
+    /// </summary>
+    private void CreateOrUpdateEyePoint(Transform enemyTarget)
+    {
+        // Buscar si el enemigo ya tiene un punto de ojos definido
+        Transform existingEyePoint = enemyTarget.Find("EyePoint");
+        
+        if (existingEyePoint != null)
+        {
+            // Usar el punto de ojos existente
+            possessionEyePoint = existingEyePoint;
+        }
+        else
+        {
+            // Crear un GameObject temporal como hijo del enemigo
+            if (possessionEyePoint == null || possessionEyePoint.parent != enemyTarget)
+            {
+                // Limpiar el anterior si existe
+                if (possessionEyePoint != null)
+                    Destroy(possessionEyePoint.gameObject);
+                
+                GameObject eyePointObj = new GameObject("_PossessionEyePoint");
+                eyePointObj.transform.SetParent(enemyTarget);
+                possessionEyePoint = eyePointObj.transform;
+            }
+            
+            // Posicionar a la altura de los ojos
+            possessionEyePoint.localPosition = new Vector3(0f, eyeHeightOffset, 0f);
+            possessionEyePoint.localRotation = Quaternion.identity;
+        }
     }
     
     /// <summary>
@@ -229,11 +428,72 @@ public class CinemachineCameraController : MonoBehaviour
     {
         currentState = CameraState.Normal;
         
+        // Desactivar control de primera persona
+        if (fpController != null)
+        {
+            fpController.Deactivate();
+        }
+        
         // Restaurar targets al jugador
         SetAllTargets(playerTransform);
         
+        // Re-habilitar orbital follow en vcamPossession si estaba deshabilitado
+        if (vcamPossession != null)
+        {
+            var orbitalFollow = vcamPossession.GetComponent<CinemachineOrbitalFollow>();
+            if (orbitalFollow != null)
+            {
+                orbitalFollow.enabled = true;
+            }
+            
+            // Desactivar CinemachineRotateWithFollowTarget (ya no necesario fuera de posesión)
+            var rotateWithFollow = vcamPossession.GetComponent<CinemachineRotateWithFollowTarget>();
+            if (rotateWithFollow != null)
+            {
+                rotateWithFollow.enabled = false;
+            }
+        }
+        
+        // Desactivar vista de arma FPS y restaurar arma de tercera persona
+        DeactivateFPSWeaponView();
+        
+        // Limpiar el punto de ojos temporal
+        CleanupPossessionEyePoint();
+        currentPossessedTarget = null;
+        
         SwitchToCamera(vcamThirdPerson);
         Debug.Log("[CinemachineCamera] ExitPossessionMode");
+    }
+    
+    /// <summary>
+    /// Desactiva la vista del arma en primera persona
+    /// </summary>
+    private void DeactivateFPSWeaponView()
+    {
+        // Desactivar vista FPS
+        if (fpsWeaponView != null)
+        {
+            fpsWeaponView.Deactivate();
+        }
+        
+        // Restaurar arma de tercera persona
+        if (currentPossessedInventory != null)
+        {
+            currentPossessedInventory.SetWeaponVisualVisible(true);
+            currentPossessedInventory = null;
+        }
+    }
+    
+    /// <summary>
+    /// Limpia el punto de ojos temporal de la posesión
+    /// </summary>
+    private void CleanupPossessionEyePoint()
+    {
+        if (possessionEyePoint != null && possessionEyePoint.name == "_PossessionEyePoint")
+        {
+            Destroy(possessionEyePoint.gameObject);
+            possessionEyePoint = null;
+        }
     }
     
     /// <summary>
@@ -279,6 +539,29 @@ public class CinemachineCameraController : MonoBehaviour
         activeCamera = newCamera;
     }
     
+    /// <summary>
+    /// Cambiar a una cámara con transición INSTANTÁNEA (sin blend)
+    /// </summary>
+    private void SwitchToCameraInstant(CinemachineCamera newCamera)
+    {
+        if (newCamera == null) return;
+        
+        SetAllInactive();
+        newCamera.Priority = activePriority;
+        activeCamera = newCamera;
+        
+        // Forzar actualización instantánea sin blend
+        newCamera.PreviousStateIsValid = false;
+        
+        // Buscar el CinemachineBrain y forzar corte instantáneo
+        var brain = CinemachineCore.FindPotentialTargetBrain(newCamera);
+        if (brain != null)
+        {
+            // Forzar actualización inmediata del brain
+            brain.ManualUpdate();
+        }
+    }
+    
     private void SyncHorizontalAxis(CinemachineCamera fromCamera, CinemachineCamera toCamera)
     {
         if (fromCamera == null || toCamera == null) return;
@@ -291,6 +574,22 @@ public class CinemachineCameraController : MonoBehaviour
             // Solo copiar el eje horizontal (yaw - rotación alrededor del personaje)
             // El eje vertical (pitch) lo maneja Cinemachine con el blend
             toOrbital.HorizontalAxis.Value = fromOrbital.HorizontalAxis.Value;
+        }
+    }
+    
+    /// <summary>
+    /// Asegura que una cámara tenga CinemachineImpulseListener para recibir screen shake
+    /// </summary>
+    private void EnsureImpulseListener(CinemachineCamera vcam)
+    {
+        if (vcam == null) return;
+        
+        var listener = vcam.GetComponent<CinemachineImpulseListener>();
+        if (listener == null)
+        {
+            listener = vcam.gameObject.AddComponent<CinemachineImpulseListener>();
+            listener.Gain = 1f;
+            Debug.Log($"[CinemachineCamera] Added ImpulseListener to {vcam.name}");
         }
     }
     

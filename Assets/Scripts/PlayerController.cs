@@ -52,6 +52,16 @@ public class PlayerController : MonoBehaviour
     [SerializeField] private float possessionCooldown = 0.5f;
     [SerializeField] private float possessedEnemyMoveSpeed = 4f;
     
+    [Header("Sprint (durante posesión)")]
+    [SerializeField] private float sprintSpeedMultiplier = 1.6f;
+    [SerializeField] private float sprintFOV = 100f;
+    [SerializeField] private float normalPossessionFOV = 90f;
+    [SerializeField] private float fovTransitionSpeed = 8f;
+    
+    [Header("Apuntado ADS (durante posesión)")]
+    [SerializeField] private float aimFOV = 70f;
+    [SerializeField] private float aimSpeedMultiplier = 0.5f;
+    
     [Header("Slow Motion (Aim)")]
     [Tooltip("Escala de tiempo durante el apuntado (0.5 = mitad de velocidad)")]
     [SerializeField] private float aimTimeScale = 0.3f;
@@ -71,6 +81,8 @@ public class PlayerController : MonoBehaviour
     // Posesión
     private EnemyController possessedEnemy;
     private float lastDismountTime = -999f;
+    private bool isSprinting = false;
+    private bool isAimingADS = false;  // Apuntando con clic derecho durante posesión
 
     // Referencia al SettingsController
     private SettingsController settingsController;
@@ -379,24 +391,72 @@ public class PlayerController : MonoBehaviour
             return;
         }
 
-        // Disparar con click izquierdo (solo si no está apuntando)
-        if (Input.GetMouseButtonDown(0) && !Input.GetMouseButton(1))
+        // Sprint con Shift (no puedes sprintar si apuntas)
+        isSprinting = (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift)) && !isAimingADS;
+        
+        // Apuntar con clic derecho (no puedes apuntar si corres)
+        bool wantsToAim = Input.GetMouseButton(1);
+        isAimingADS = wantsToAim && !isSprinting;
+        
+        // Actualizar estado de apuntado en el arma FPS
+        if (cinemachineCamera != null)
+        {
+            cinemachineCamera.SetADSState(isAimingADS);
+        }
+        
+        // Actualizar estado del crosshair
+        bool isMovingNow = cinemachineCamera != null && 
+                          cinemachineCamera.FirstPersonController != null &&
+                          cinemachineCamera.FirstPersonController.GetMovementDirection().sqrMagnitude > 0.01f;
+        if (CrosshairController.Instance != null)
+        {
+            CrosshairController.Instance.UpdateState(isAimingADS, isMovingNow, isSprinting);
+        }
+
+        // Disparar con click izquierdo (ahora también mientras apuntas)
+        if (Input.GetMouseButtonDown(0))
         {
             TryFirePossessedWeapon();
         }
         
-        // Desmontar con espacio + click derecho
-        if (Input.GetKeyDown(KeyCode.Space) && Input.GetMouseButton(1))
-        {
-            StartDismount();
-        }
+        // DESACTIVADO TEMPORALMENTE: Desmontar con espacio + click derecho
+        // if (Input.GetKeyDown(KeyCode.Space) && Input.GetMouseButton(1))
+        // {
+        //     StartDismount();
+        // }
+        
+        // Actualizar FOV de la cámara según sprint/apuntado
+        UpdateSprintFOV();
 
         HandlePossessedMovement();
 
         Vector3 enemyPos = possessedEnemy.transform.position;
         transform.position = new Vector3(enemyPos.x, 1.625f, enemyPos.z);
 
-        // En FPS, la rotación la maneja FirstPersonCamera
+        // En FPS, la rotación la maneja FirstPersonPossessionController
+    }
+    
+    /// <summary>
+    /// Actualiza el FOV de la cámara de posesión según sprint/apuntado
+    /// </summary>
+    private void UpdateSprintFOV()
+    {
+        if (cinemachineCamera == null) return;
+        
+        // Acceder directamente a vcamPossession para cambiar FOV
+        var vcam = cinemachineCamera.GetActivePossessionCamera();
+        if (vcam != null)
+        {
+            float targetFOV;
+            if (isAimingADS)
+                targetFOV = aimFOV;
+            else if (isSprinting)
+                targetFOV = sprintFOV;
+            else
+                targetFOV = normalPossessionFOV;
+                
+            vcam.Lens.FieldOfView = Mathf.Lerp(vcam.Lens.FieldOfView, targetFOV, fovTransitionSpeed * Time.deltaTime);
+        }
     }
 
     // ---------------- ACTIONS ----------------
@@ -624,9 +684,16 @@ public class PlayerController : MonoBehaviour
                 cameraFollow.ForceAimMode(true);
         }
         
+        // Ocultar modelo del jugador para no interferir con vista FPS
+        SetModelVisible(false);
+        
         // Actualizar target de Cinemachine
         if (cinemachineCamera != null)
             cinemachineCamera.EnterPossessionMode(enemy.transform);
+        
+        // Mostrar crosshair
+        if (CrosshairController.Instance != null)
+            CrosshairController.Instance.SetVisible(true);
     }
 
     /// <summary>
@@ -636,6 +703,14 @@ public class PlayerController : MonoBehaviour
     {
         ReleasePossessedEnemy();
         RestoreCameraToPlayer();
+        
+        // Mostrar modelo del jugador de nuevo
+        SetModelVisible(true);
+        
+        // Ocultar crosshair
+        if (CrosshairController.Instance != null)
+            CrosshairController.Instance.SetVisible(false);
+        
         CurrentState = PlayerState.Normal;
     }
 
@@ -646,6 +721,9 @@ public class PlayerController : MonoBehaviour
             possessedEnemy.OnReleased();
             possessedEnemy = null;
         }
+        
+        // Resetear estado de sprint
+        isSprinting = false;
     }
 
     private void RestoreCameraToPlayer()
@@ -735,11 +813,42 @@ public class PlayerController : MonoBehaviour
     {
         if (possessedEnemy == null) return;
 
-        float h = Input.GetAxisRaw("Horizontal");
-        float v = Input.GetAxisRaw("Vertical");
-
-        Vector3 move = new Vector3(h, 0f, v).normalized;
-        possessedEnemy.Move(move * possessedEnemyMoveSpeed * Time.deltaTime);
+        Vector3 moveDirection;
+        
+        // Si tenemos el controlador FPS activo, usar direcciones relativas al enemigo
+        if (cinemachineCamera != null && 
+            cinemachineCamera.FirstPersonController != null && 
+            cinemachineCamera.FirstPersonController.IsActive)
+        {
+            moveDirection = cinemachineCamera.FirstPersonController.GetMovementDirection();
+        }
+        else
+        {
+            // Fallback: movimiento en ejes mundiales (para compatibilidad)
+            float h = Input.GetAxisRaw("Horizontal");
+            float v = Input.GetAxisRaw("Vertical");
+            moveDirection = new Vector3(h, 0f, v).normalized;
+        }
+        
+        // Aplicar multiplicador de sprint o apuntado
+        float currentSpeed = possessedEnemyMoveSpeed;
+        if (isAimingADS)
+        {
+            currentSpeed *= aimSpeedMultiplier;
+        }
+        else if (isSprinting)
+        {
+            currentSpeed *= sprintSpeedMultiplier;
+        }
+        
+        // Actualizar animación del arma FPS (bob)
+        bool isMoving = moveDirection.sqrMagnitude > 0.01f;
+        if (cinemachineCamera != null)
+        {
+            cinemachineCamera.UpdateFPSWeaponMovement(isMoving, isSprinting);
+        }
+        
+        possessedEnemy.Move(moveDirection * currentSpeed * Time.deltaTime);
     }
 
     /// <summary>
@@ -750,15 +859,92 @@ public class PlayerController : MonoBehaviour
         if (possessedEnemy == null) return;
 
         InventoryHolder inventory = possessedEnemy.GetComponent<InventoryHolder>();
-        if (inventory == null) return;
+        if (inventory == null || !inventory.HasWeapon) return;
 
-        // Calcular dirección de disparo hacia el mouse
-        Vector3 mouseWorld = settingsController.GetMouseWorldPosition(mainCamera, Input.mousePosition);
-        Vector3 direction = mouseWorld - possessedEnemy.transform.position;
-        direction.y = 0f;
-        direction.Normalize();
+        Vector3 direction;
+        Vector3 origin = Vector3.zero;
+        
+        // Si tenemos el controlador FPS activo, usar la dirección de la cámara
+        if (cinemachineCamera != null && 
+            cinemachineCamera.FirstPersonController != null && 
+            cinemachineCamera.FirstPersonController.IsActive)
+        {
+            // Obtener la cámara principal para hacer raycast
+            Camera cam = Camera.main;
+            if (cam != null)
+            {
+                // Raycast desde el centro de la pantalla para encontrar el punto de mira
+                Ray ray = cam.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0f));
+                
+                // Buscar punto de impacto o usar punto lejano
+                Vector3 aimPoint;
+                RaycastHit hit;
+                if (Physics.Raycast(ray, out hit, 1000f))
+                {
+                    aimPoint = hit.point;
+                }
+                else
+                {
+                    aimPoint = ray.GetPoint(100f);
+                }
+                
+                // Calcular dirección desde el arma hacia el punto de mira
+                origin = inventory.GetMuzzlePosition();
+                direction = (aimPoint - origin).normalized;
+                
+                // Aplicar dispersión
+                direction = ApplyDispersion(direction);
+            }
+            else
+            {
+                // Fallback: usar dirección del eyePoint
+                direction = cinemachineCamera.FirstPersonController.GetAimDirection();
+                direction = ApplyDispersion(direction);
+            }
+        }
+        else
+        {
+            // Fallback: disparar hacia el mouse (para compatibilidad top-down)
+            Vector3 mouseWorld = settingsController.GetMouseWorldPosition(mainCamera, Input.mousePosition);
+            direction = mouseWorld - possessedEnemy.transform.position;
+            direction.y = 0f;
+            direction.Normalize();
+        }
 
-        inventory.TryFire(direction);
+        bool fired = inventory.TryFire(direction);
+        
+        // Si disparó, aplicar efectos de recoil y camera shake
+        if (fired && cinemachineCamera != null)
+        {
+            // Animación de recoil del arma FPS
+            cinemachineCamera.TriggerWeaponRecoil();
+            
+            // Camera shake usando intensidad del WeaponType
+            float shakeIntensity = inventory.EquippedWeapon.weaponType.fireShakeIntensity;
+            if (shakeIntensity > 0f)
+            {
+                cinemachineCamera.TriggerShake(shakeIntensity);
+            }
+        }
+    }
+    
+    /// <summary>
+    /// Aplica dispersión aleatoria a una dirección de disparo
+    /// </summary>
+    private Vector3 ApplyDispersion(Vector3 direction)
+    {
+        if (CrosshairController.Instance == null) return direction;
+        
+        float dispersionAngle = CrosshairController.Instance.CurrentDispersion;
+        if (dispersionAngle <= 0f) return direction;
+        
+        // Generar desviación aleatoria dentro de un cono
+        float randomAngleX = Random.Range(-dispersionAngle, dispersionAngle);
+        float randomAngleY = Random.Range(-dispersionAngle, dispersionAngle);
+        
+        // Aplicar rotación a la dirección
+        Quaternion dispersionRotation = Quaternion.Euler(randomAngleX, randomAngleY, 0f);
+        return dispersionRotation * direction;
     }
 
     void RotateTowardsMouse()
@@ -809,6 +995,13 @@ public class PlayerController : MonoBehaviour
         lastDismountTime = Time.time;
         ReleasePossessedEnemy();
         
+        // Mostrar el modelo del jugador de nuevo
+        SetModelVisible(true);
+        
+        // Restaurar cámara a tercera persona
+        if (cinemachineCamera != null)
+            cinemachineCamera.ExitPossessionMode(transform);
+        
         if (jumpTrajectoryPoints == null || jumpTrajectoryPoints.Length == 0)
         {
             Vector3 currentPos = transform.position;
@@ -845,6 +1038,18 @@ public class PlayerController : MonoBehaviour
             cameraFollow.SetTarget(transform);
             cameraFollow.SetPossessedMode(false);
             cameraFollow.SetJumping(true, currentJumpDuration);
+        }
+    }
+    
+    /// <summary>
+    /// Muestra u oculta todos los renderers del modelo del jugador (para primera persona)
+    /// </summary>
+    private void SetModelVisible(bool visible)
+    {
+        Renderer[] renderers = GetComponentsInChildren<Renderer>();
+        foreach (var renderer in renderers)
+        {
+            renderer.enabled = visible;
         }
     }
 }

@@ -2,35 +2,36 @@ using UnityEngine;
 
 /// <summary>
 /// Visualiza la trayectoria parabólica del salto del jugador.
-/// Dibuja la parábola tanto en el editor (Gizmos) como en el juego (LineRenderer).
+/// 
+/// NUEVO SISTEMA: Longitud de arco fija
+/// - El ápice de la parábola está en un rayo desde la cámara hacia el apexTarget
+/// - La longitud total del arco es fija (arcLength)
+/// - Solo existe UNA parábola que cumple ambas condiciones
+/// 
+/// Rebotes en paredes: conservan la distancia total (sin pérdida de velocidad)
 /// </summary>
 [RequireComponent(typeof(LineRenderer))]
 public class JumpTrajectoryVisualizer : MonoBehaviour
 {
-    [Header("Trajectory Settings")]
-    [Tooltip("Potencia del salto - controla la longitud total de la parábola")]
-    [SerializeField] private float jumpPower = 15f;
+    [Header("Arc Length System")]
+    [Tooltip("Longitud total del arco de la parábola (en unidades)")]
+    [SerializeField] private float arcLength = 10f;
     
     [Tooltip("Gravedad aplicada al salto")]
     [SerializeField] private float gravity = 20f;
     
-    [Tooltip("Multiplicador de velocidad para recorrer la trayectoria (1 = tiempo físico real)")]
+    [Tooltip("Transform que define la dirección del ápice (colocado ligeramente encima del jugador)")]
+    [SerializeField] private Transform apexTarget;
+    
+    [Tooltip("Multiplicador de velocidad para recorrer la trayectoria")]
     [SerializeField] private float jumpSpeedMultiplier = 1f;
     
-    [Tooltip("Tiempo máximo de simulación")]
-    [SerializeField] private float maxSimulationTime = 3f;
-    
+    [Header("Trajectory Settings")]
     [Tooltip("Número de puntos en la trayectoria")]
     [SerializeField] private int trajectoryResolution = 50;
     
     [Tooltip("Altura desde donde sale la línea (relativa al jugador)")]
     [SerializeField] private float startHeightOffset = 0.5f;
-    
-    [Tooltip("Ángulo mínimo de lanzamiento en grados (evita saltos completamente horizontales)")]
-    [SerializeField] private float minLaunchAngle = 15f;
-    
-    [Tooltip("Ángulo máximo de lanzamiento en grados")]
-    [SerializeField] private float maxLaunchAngle = 75f;
     
     [Header("Visual Settings")]
     [SerializeField] private Color trajectoryColor = Color.green;
@@ -49,9 +50,6 @@ public class JumpTrajectoryVisualizer : MonoBehaviour
     [Tooltip("Número máximo de rebotes en paredes")]
     [SerializeField] private int maxBounces = 3;
     
-    [Tooltip("Factor de conservación de velocidad al rebotar (0-1)")]
-    [SerializeField] private float bounceVelocityFactor = 0.7f;
-    
     [Header("Landing Indicator")]
     [Tooltip("Radio del círculo de aterrizaje")]
     [SerializeField] private float landingCircleRadius = 0.5f;
@@ -64,7 +62,7 @@ public class JumpTrajectoryVisualizer : MonoBehaviour
     
     [Header("References")]
     [SerializeField] private Transform player;
-    [SerializeField] private ThirdPersonOrbitCamera orbitCamera;
+    [SerializeField] private Camera mainCamera;
     
     [Tooltip("Punto de origen de la parábola (pivote del jugador). Si está vacío, usa player.position + startHeightOffset")]
     [SerializeField] private Transform playerPivot;
@@ -80,9 +78,10 @@ public class JumpTrajectoryVisualizer : MonoBehaviour
     private Vector3 launchDirection;
     private Vector3 landingPoint;
     private bool hasValidLanding = false;
-    private Vector3 calculatedVelocity; // Velocidad calculada para el salto actual
-    private Vector3 trajectoryStartPosition; // Posición exacta de inicio de la trayectoria
-    private float physicsFlightTime = 0f; // Tiempo de vuelo según la física de la simulación
+    private Vector3 calculatedVelocity;
+    private Vector3 trajectoryStartPosition;
+    private float physicsFlightTime = 0f;
+    private Vector3 apexPoint; // Punto del ápice calculado
     
     // Propiedades públicas
     public Vector3[] TrajectoryPoints => trajectoryPoints;
@@ -90,9 +89,10 @@ public class JumpTrajectoryVisualizer : MonoBehaviour
     public Vector3 LaunchDirection => launchDirection;
     public Vector3 LandingPoint => landingPoint;
     public bool HasValidLanding => hasValidLanding;
-    public float JumpPower => jumpPower;
+    public float ArcLength => arcLength;
     public float Gravity => gravity;
     public bool IsActive => isActive;
+    public Vector3 ApexPoint => apexPoint;
     
     /// <summary>
     /// Duración del salto en segundos (tiempo físico ajustado por el multiplicador de velocidad)
@@ -111,14 +111,13 @@ public class JumpTrajectoryVisualizer : MonoBehaviour
         if (player == null)
             player = FindFirstObjectByType<PlayerController>()?.transform;
             
-        if (orbitCamera == null)
-            orbitCamera = FindFirstObjectByType<ThirdPersonOrbitCamera>();
+        if (mainCamera == null)
+            mainCamera = Camera.main;
             
         // Inicializar array
         trajectoryPoints = new Vector3[trajectoryResolution];
         
-        // Debug
-        Debug.Log($"[JumpTrajectory] Start - Player: {(player != null ? player.name : "NULL")}, OrbitCamera: {(orbitCamera != null ? orbitCamera.name : "NULL")}, LineRenderer: {(lineRenderer != null ? "OK" : "NULL")}");
+        Debug.Log($"[JumpTrajectory] Start - Player: {(player != null ? player.name : "NULL")}, Camera: {(mainCamera != null ? "OK" : "NULL")}, ApexTarget: {(apexTarget != null ? apexTarget.name : "NULL")}");
         
         // Ocultar al inicio
         SetActive(false);
@@ -165,224 +164,183 @@ public class JumpTrajectoryVisualizer : MonoBehaviour
     }
     
     /// <summary>
-    /// Calcula la trayectoria parabólica desde la posición del jugador.
-    /// - jumpPower controla la "longitud" total de la parábola
-    /// - La dirección de la cámara determina cómo se distribuye entre altura y distancia
-    /// - Si apunta al suelo: el destino es ese punto (si está en alcance) o el máximo alcance
+    /// Calcula la trayectoria usando el nuevo sistema de longitud de arco fija.
+    /// 
+    /// 1. Construye el rayo del ápice: desde la cámara hacia el apexTarget
+    /// 2. Usa ParabolaArcSolver para encontrar el ápice único que produce la longitud de arco deseada
+    /// 3. Aplica rebotes en paredes SIN pérdida de velocidad
     /// </summary>
     void CalculateTrajectory()
     {
-        // Posición inicial: usar playerPivot si está asignado, si no usar player + offset
-        Vector3 startPos;
-        if (playerPivot != null)
+        // Posición inicial
+        Vector3 startPos = playerPivot != null ? playerPivot.position : player.position + Vector3.up * startHeightOffset;
+        trajectoryStartPosition = startPos;
+        
+        // Construir el rayo del ápice
+        Vector3 cameraPos = mainCamera != null ? mainCamera.transform.position : player.position + Vector3.up * 2f + Vector3.back * 3f;
+        
+        Vector3 apexRayDirection;
+        if (apexTarget != null)
         {
-            startPos = playerPivot.position;
+            // Rayo desde la cámara hacia el apexTarget
+            apexRayDirection = (apexTarget.position - cameraPos).normalized;
         }
         else
         {
-            startPos = player.position + Vector3.up * startHeightOffset;
+            // Fallback: usar la dirección de la cámara con inclinación hacia arriba
+            Vector3 cameraForward = mainCamera != null ? mainCamera.transform.forward : player.forward;
+            Vector3 horizontalDir = new Vector3(cameraForward.x, 0, cameraForward.z).normalized;
+            // Ángulo de 45° hacia arriba desde la horizontal
+            apexRayDirection = (horizontalDir + Vector3.up).normalized;
         }
         
-        // Guardar la posición de inicio para que el PlayerController la use
-        trajectoryStartPosition = startPos;
-        
-        // Obtener dirección de la cámara
-        Vector3 cameraForward = orbitCamera != null ? orbitCamera.transform.forward : player.forward;
-        Vector3 cameraPosition = orbitCamera != null ? orbitCamera.transform.position : player.position + Vector3.up * 2f;
-        
-        // Dirección horizontal normalizada
-        launchDirection = new Vector3(cameraForward.x, 0f, cameraForward.z).normalized;
+        // Dirección horizontal del salto
+        launchDirection = new Vector3(apexRayDirection.x, 0, apexRayDirection.z).normalized;
         if (launchDirection.magnitude < 0.01f)
             launchDirection = player.forward;
         
-        // Calcular el pitch de la cámara (negativo = mirando abajo)
-        float cameraPitch = Mathf.Asin(Mathf.Clamp(cameraForward.y, -1f, 1f)) * Mathf.Rad2Deg;
+        // Usar el solver para encontrar la parábola
+        var result = ParabolaArcSolver.SolveParabola(
+            startPos,
+            cameraPos,
+            apexRayDirection,
+            arcLength,
+            gravity,
+            trajectoryResolution,
+            groundMask
+        );
         
-        Vector3 velocity;
-        
-        // Si la cámara apunta hacia abajo, intentar alcanzar el punto del suelo
-        if (cameraPitch < 0f)
+        if (result.IsValid)
         {
-            velocity = CalculateVelocityForGroundTarget(startPos, cameraPosition, cameraForward);
+            apexPoint = result.Apex;
+            calculatedVelocity = result.InitialVelocity;
+            physicsFlightTime = result.FlightTime;
+            
+            // Ahora simular con rebotes (sin pérdida de velocidad)
+            SimulateTrajectoryWithBounces(startPos, result.InitialVelocity);
         }
         else
         {
-            // Apuntando hacia arriba o horizontal
-            // Mapear el pitch de la cámara al ángulo de lanzamiento
-            // Pitch 0° (horizontal) → ángulo mínimo (salto largo y bajo)
-            // Pitch 90° (arriba) → ángulo máximo (salto alto y corto)
-            float t = cameraPitch / 90f; // 0 a 1
-            float launchAngle = Mathf.Lerp(minLaunchAngle, maxLaunchAngle, t);
-            
-            velocity = CalculateVelocityFromAngle(launchAngle);
+            // Fallback: parábola simple si el solver falla
+            Debug.LogWarning("[JumpTrajectory] Solver failed, using fallback");
+            SimulateTrajectoryFallback(startPos);
         }
-        
-        calculatedVelocity = velocity;
-        
-        // Simular la trayectoria
-        SimulateTrajectory(startPos, velocity);
     }
     
     /// <summary>
-    /// Calcula la velocidad para alcanzar un punto del suelo donde apunta la cámara
+    /// Simula la trayectoria con rebotes en paredes SIN pérdida de velocidad.
+    /// La distancia total del arco se conserva incluso después de rebotar.
     /// </summary>
-    Vector3 CalculateVelocityForGroundTarget(Vector3 startPos, Vector3 cameraPos, Vector3 cameraDir)
+    void SimulateTrajectoryWithBounces(Vector3 startPos, Vector3 velocity)
     {
-        // Hacer raycast desde la cámara hacia donde apunta
-        if (Physics.Raycast(cameraPos, cameraDir, out RaycastHit hit, 100f, groundMask))
-        {
-            Vector3 targetPoint = hit.point;
-            
-            // Calcular distancia horizontal y diferencia de altura
-            Vector3 toTarget = targetPoint - startPos;
-            float horizontalDist = new Vector3(toTarget.x, 0f, toTarget.z).magnitude;
-            float heightDiff = toTarget.y; // Negativo si el objetivo está más abajo
-            
-            // Calcular el alcance máximo con jumpPower a 45°
-            // R_max = v² / g (alcance máximo teórico en terreno plano)
-            float maxRange = (jumpPower * jumpPower) / gravity;
-            
-            // Verificar si el punto está en alcance
-            // Para simplificar, comparamos distancia horizontal con alcance máximo
-            if (horizontalDist <= maxRange * 0.95f) // 0.95 para dar margen
-            {
-                // El punto está en alcance - calcular velocidad para llegar exactamente ahí
-                return CalculateVelocityToReachPoint(horizontalDist, heightDiff);
-            }
-        }
-        
-        // El punto está fuera de alcance o no hay suelo
-        // Usar el alcance máximo en la dirección horizontal de la cámara
-        // Ángulo óptimo para máximo alcance = 45°
-        float optimalAngle = 45f;
-        
-        // Si hay diferencia de altura (bajando), ajustar ángulo para mayor alcance
-        return CalculateVelocityFromAngle(optimalAngle);
-    }
-    
-    /// <summary>
-    /// Calcula la velocidad necesaria para alcanzar un punto específico
-    /// </summary>
-    Vector3 CalculateVelocityToReachPoint(float horizontalDist, float heightDiff)
-    {
-        // Usamos la fórmula de proyectil para calcular el ángulo necesario
-        // Para alcanzar (d, h) con velocidad v:
-        // h = d*tan(θ) - (g*d²)/(2*v²*cos²(θ))
-        
-        // Hay dos soluciones (ángulo alto y bajo). Preferimos el más bajo para mayor control.
-        // Simplificación: calcular ángulo que maximiza la probabilidad de alcanzar el punto
-        
-        float v2 = jumpPower * jumpPower;
-        float g = gravity;
-        float d = horizontalDist;
-        float h = heightDiff;
-        
-        // Discriminante para verificar si es alcanzable
-        float discriminant = v2 * v2 - g * (g * d * d + 2f * h * v2);
-        
-        if (discriminant < 0f)
-        {
-            // No alcanzable con esta velocidad, usar ángulo de 45° (máximo alcance)
-            return CalculateVelocityFromAngle(45f);
-        }
-        
-        // Calcular los dos ángulos posibles
-        float sqrtDisc = Mathf.Sqrt(discriminant);
-        float angle1 = Mathf.Atan2(v2 + sqrtDisc, g * d) * Mathf.Rad2Deg;
-        float angle2 = Mathf.Atan2(v2 - sqrtDisc, g * d) * Mathf.Rad2Deg;
-        
-        // Elegir el ángulo más bajo (trayectoria más directa) pero dentro de límites
-        float chosenAngle = Mathf.Min(angle1, angle2);
-        chosenAngle = Mathf.Clamp(chosenAngle, minLaunchAngle, maxLaunchAngle);
-        
-        return CalculateVelocityFromAngle(chosenAngle);
-    }
-    
-    /// <summary>
-    /// Calcula el vector de velocidad dado un ángulo de lanzamiento
-    /// </summary>
-    Vector3 CalculateVelocityFromAngle(float angleDegrees)
-    {
-        float angleRad = angleDegrees * Mathf.Deg2Rad;
-        float vx = jumpPower * Mathf.Cos(angleRad);
-        float vy = jumpPower * Mathf.Sin(angleRad);
-        
-        return launchDirection * vx + Vector3.up * vy;
-    }
-    
-    /// <summary>
-    /// Simula la trayectoria paso a paso con colisiones
-    /// </summary>
-    void SimulateTrajectory(Vector3 startPos, Vector3 velocity)
-    {
-        float timeStep = maxSimulationTime / trajectoryResolution;
         hasValidLanding = false;
         landingNormal = Vector3.up;
         int bounceCount = 0;
         
-        System.Collections.Generic.List<Vector3> pointsList = new System.Collections.Generic.List<Vector3>();
+        var pointsList = new System.Collections.Generic.List<Vector3>();
         
         Vector3 currentPos = startPos;
-        float currentTime = 0f;
+        Vector3 currentVelocity = velocity;
+        float remainingArcLength = arcLength;
+        float accumulatedLength = 0f;
         
         pointsList.Add(currentPos);
         
-        while (currentTime < maxSimulationTime && pointsList.Count < trajectoryResolution * 2)
+        // Calcular tiempo estimado de vuelo
+        float estimatedFlightTime = physicsFlightTime > 0 ? physicsFlightTime * 2f : 3f;
+        float dt = estimatedFlightTime / trajectoryResolution;
+        int maxIterations = trajectoryResolution * 3;
+        
+        for (int i = 0; i < maxIterations && remainingArcLength > 0.01f; i++)
         {
-            float dt = timeStep;
-            if (currentTime + dt > maxSimulationTime)
-                dt = maxSimulationTime - currentTime;
-            
-            // Calcular siguiente posición
-            Vector3 nextPos = currentPos + velocity * dt + 0.5f * gravity * Vector3.down * dt * dt;
-            
-            // Actualizar velocidad
-            velocity += gravity * Vector3.down * dt;
+            // Siguiente posición
+            Vector3 nextPos = currentPos + currentVelocity * dt - 0.5f * gravity * Vector3.up * dt * dt;
+            Vector3 nextVelocity = currentVelocity - gravity * Vector3.up * dt;
             
             Vector3 direction = nextPos - currentPos;
-            float distance = direction.magnitude;
+            float segmentLength = direction.magnitude;
             
-            if (distance > 0.001f)
+            if (segmentLength < 0.001f)
             {
-                // Verificar colisión con suelo
-                if (Physics.SphereCast(currentPos, collisionRadius * 0.5f, direction.normalized, out RaycastHit groundHit, distance, groundMask))
-                {
-                    landingPoint = groundHit.point;
-                    landingNormal = groundHit.normal;
-                    pointsList.Add(landingPoint);
-                    hasValidLanding = true;
-                    break;
-                }
-                
-                // Verificar colisión con paredes
-                if (bounceCount < maxBounces && Physics.SphereCast(currentPos, collisionRadius * 0.5f, direction.normalized, out RaycastHit wallHit, distance, wallMask))
-                {
-                    Vector3 hitPoint = wallHit.point + wallHit.normal * collisionRadius * 0.5f;
-                    pointsList.Add(hitPoint);
-                    
-                    // Reflejar velocidad horizontal
-                    Vector3 horizontalVel = new Vector3(velocity.x, 0f, velocity.z);
-                    Vector3 reflectedHorizontal = Vector3.Reflect(horizontalVel, wallHit.normal) * bounceVelocityFactor;
-                    velocity = new Vector3(reflectedHorizontal.x, velocity.y, reflectedHorizontal.z);
-                    
-                    currentPos = hitPoint;
-                    bounceCount++;
-                    currentTime += dt * (wallHit.distance / distance);
-                    continue;
-                }
+                currentVelocity = nextVelocity;
+                continue;
             }
             
-            if (nextPos.y < -10f)
+            // Verificar colisión con suelo
+            if (Physics.SphereCast(currentPos, collisionRadius * 0.5f, direction.normalized, out RaycastHit groundHit, segmentLength, groundMask))
+            {
+                landingPoint = groundHit.point;
+                landingNormal = groundHit.normal;
+                pointsList.Add(landingPoint);
+                hasValidLanding = true;
+                break;
+            }
+            
+            // Verificar colisión con paredes
+            if (bounceCount < maxBounces && Physics.SphereCast(currentPos, collisionRadius * 0.5f, direction.normalized, out RaycastHit wallHit, segmentLength, wallMask))
+            {
+                Vector3 hitPoint = wallHit.point + wallHit.normal * collisionRadius * 0.6f;
+                float hitSegmentLength = Vector3.Distance(currentPos, hitPoint);
+                
+                accumulatedLength += hitSegmentLength;
+                remainingArcLength -= hitSegmentLength;
+                pointsList.Add(hitPoint);
+                
+                // REBOTE SIN PÉRDIDA DE VELOCIDAD
+                // Reflejar velocidad horizontal manteniendo la magnitud
+                Vector3 horizontalVel = new Vector3(currentVelocity.x, 0f, currentVelocity.z);
+                Vector3 reflectedHorizontal = Vector3.Reflect(horizontalVel, wallHit.normal);
+                // NO multiplicamos por bounceVelocityFactor - conservamos toda la velocidad
+                currentVelocity = new Vector3(reflectedHorizontal.x, currentVelocity.y, reflectedHorizontal.z);
+                
+                currentPos = hitPoint;
+                bounceCount++;
+                continue;
+            }
+            
+            // Límite de altura
+            if (nextPos.y < startPos.y - 50f)
                 break;
             
+            accumulatedLength += segmentLength;
+            remainingArcLength -= segmentLength;
+            
             currentPos = nextPos;
+            currentVelocity = nextVelocity;
             pointsList.Add(currentPos);
-            currentTime += dt;
         }
         
-        // Guardar el tiempo de vuelo físico
-        physicsFlightTime = currentTime;
+        // Si no encontramos suelo pero consumimos el arco, marcar el último punto como aterrizaje
+        if (!hasValidLanding && pointsList.Count > 1)
+        {
+            landingPoint = pointsList[pointsList.Count - 1];
+            // Hacer raycast hacia abajo para encontrar el suelo real
+            if (Physics.Raycast(landingPoint + Vector3.up * 2f, Vector3.down, out RaycastHit floorHit, 10f, groundMask))
+            {
+                landingPoint = floorHit.point;
+                pointsList[pointsList.Count - 1] = landingPoint;
+                landingNormal = floorHit.normal;
+                hasValidLanding = true;
+            }
+        }
+        
         trajectoryPoints = pointsList.ToArray();
+        physicsFlightTime = trajectoryPoints.Length * dt;
+    }
+    
+    /// <summary>
+    /// Fallback simple si el solver falla
+    /// </summary>
+    void SimulateTrajectoryFallback(Vector3 startPos)
+    {
+        // Calcular velocidad simple basada en la longitud del arco
+        float estimatedSpeed = arcLength / 2f; // Aproximación muy simple
+        float angle = 45f * Mathf.Deg2Rad;
+        
+        Vector3 velocity = launchDirection * estimatedSpeed * Mathf.Cos(angle) + Vector3.up * estimatedSpeed * Mathf.Sin(angle);
+        calculatedVelocity = velocity;
+        
+        SimulateTrajectoryWithBounces(startPos, velocity);
     }
     
     /// <summary>
@@ -492,11 +450,11 @@ public class JumpTrajectoryVisualizer : MonoBehaviour
     }
     
     /// <summary>
-    /// Establece la potencia del salto
+    /// Establece la longitud del arco de la parábola
     /// </summary>
-    public void SetJumpPower(float power)
+    public void SetArcLength(float length)
     {
-        jumpPower = power;
+        arcLength = Mathf.Max(1f, length);
     }
     
     /// <summary>
@@ -505,6 +463,14 @@ public class JumpTrajectoryVisualizer : MonoBehaviour
     public Vector3 GetLaunchVelocity()
     {
         return calculatedVelocity;
+    }
+    
+    /// <summary>
+    /// Asigna el transform del apex target en runtime
+    /// </summary>
+    public void SetApexTarget(Transform target)
+    {
+        apexTarget = target;
     }
     
 #if UNITY_EDITOR
@@ -520,12 +486,34 @@ public class JumpTrajectoryVisualizer : MonoBehaviour
             Gizmos.DrawLine(trajectoryPoints[i], trajectoryPoints[i + 1]);
         }
         
+        // Dibujar el ápice de la parábola
+        if (apexPoint != Vector3.zero)
+        {
+            Gizmos.color = Color.cyan;
+            Gizmos.DrawWireSphere(apexPoint, 0.2f);
+            
+            // Línea del origen al ápice
+            if (trajectoryPoints.Length > 0)
+            {
+                Gizmos.DrawLine(trajectoryPoints[0], apexPoint);
+            }
+        }
+        
+        // Dibujar rayo del ápice si el target existe
+        if (apexTarget != null && mainCamera != null)
+        {
+            Gizmos.color = Color.magenta;
+            Vector3 rayStart = mainCamera.transform.position;
+            Vector3 rayDir = (apexTarget.position - rayStart).normalized;
+            Gizmos.DrawRay(rayStart, rayDir * 20f);
+            Gizmos.DrawWireSphere(apexTarget.position, 0.15f);
+        }
+        
         // Dibujar punto de aterrizaje con círculo
         if (hasValidLanding)
         {
             Gizmos.color = landingCircleColor;
             
-            // Dibujar círculo de aterrizaje en gizmos
             Vector3 right = Vector3.Cross(landingNormal, Vector3.forward).normalized;
             if (right.magnitude < 0.01f)
                 right = Vector3.Cross(landingNormal, Vector3.right).normalized;
@@ -541,15 +529,14 @@ public class JumpTrajectoryVisualizer : MonoBehaviour
                 prevPoint = point;
             }
             
-            // Centro del círculo
             Gizmos.DrawWireSphere(landingPoint, 0.1f);
         }
         
-        // Dibujar esferas en los puntos de la trayectoria
-        Gizmos.color = new Color(0f, 1f, 0f, 0.5f);
+        // Dibujar esferas pequeñas en cada punto de la trayectoria
+        Gizmos.color = new Color(0f, 1f, 0f, 0.3f);
         foreach (var point in trajectoryPoints)
         {
-            Gizmos.DrawWireSphere(point, 0.05f);
+            Gizmos.DrawWireSphere(point, 0.03f);
         }
     }
 #endif

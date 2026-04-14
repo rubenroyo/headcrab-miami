@@ -257,11 +257,116 @@
 
 ---
 
-# 🏃 SPRINT 3 - Armas y Tipos de Enemigos (PENDIENTE)
+# 🏃 SPRINT 3 - Sistema de Cámara y Posesión FPS (COMPLETADO)
 
 ## 📁 Categoría: Programming
 
-### Tarea 3.1: Sistema de Daño y Salud
+### Tarea 3.1: Migración a Sistema de Cámaras Cinemachine
+| Campo | Valor |
+|-------|-------|
+| **Tag** | Camera, Core |
+| **Importance** | Must Have |
+| **Estimated** | 10h |
+| **Logged** | 10h |
+| **Description** | Reemplazar sistema de cámara manual por Cinemachine con 4 cámaras virtuales: tercera persona, primera persona, transición de posesión y cámara de muerte. |
+| **Subtasks** | ✅ CinemachineCameraController.cs ✅ VCam ThirdPerson con Cinemachine3rdPersonFollow ✅ VCam FirstPerson para modo posesión ✅ VCam Possession para transición ✅ VCam Death para cámara de muerte ✅ Sistema de prioridades para transiciones suaves ✅ Cinemachine Brain en cámara principal |
+
+### Tarea 3.2: Sistema de Posesión en Primera Persona
+| Campo | Valor |
+|-------|-------|
+| **Tag** | Gameplay, Possession |
+| **Importance** | Must Have |
+| **Estimated** | 8h |
+| **Logged** | 8h |
+| **Description** | Control FPS completo durante posesión de enemigo: mouse look, movimiento WASD, disparo, y transición suave. |
+| **Subtasks** | ✅ Control de mouse look en PlayerController ✅ Rotación de cámara con clamp vertical ✅ Movimiento WASD relativo a cámara ✅ Integración con sistema de armas ✅ Transiciones suaves de cámara al poseer/liberar |
+
+### Tarea 3.3: Visualizador de Trayectoria de Salto
+| Campo | Valor |
+|-------|-------|
+| **Tag** | UI, Visual |
+| **Importance** | Should Have |
+| **Estimated** | 4h |
+| **Logged** | 4h |
+| **Description** | LineRenderer que muestra trayectoria parabólica del salto durante carga, con predicción física real. |
+| **Subtasks** | ✅ JumpTrajectoryPreview.cs ✅ Cálculo de parábola con gravedad real ✅ 30 puntos de resolución ✅ Actualización en tiempo real durante carga ✅ Ocultar al soltar/saltar |
+
+### Tarea 3.4: Vista de Arma FPS (Bob, Sway, Recoil)
+| Campo | Valor |
+|-------|-------|
+| **Tag** | Visual, Weapons |
+| **Importance** | Must Have |
+| **Estimated** | 6h |
+| **Logged** | 6h |
+| **Description** | Sistema completo de animación procedural para el arma en primera persona durante posesión. |
+| **Subtasks** | ✅ FPSWeaponView.cs ✅ Bob vertical/horizontal al caminar ✅ Sway del arma siguiendo mouse (rotation + position) ✅ Recoil visual al disparar ✅ Parámetros configurables (swayAmount=90, swaySmooth=3) ✅ Interpolación suave entre estados |
+
+### Tarea 3.5: Sistema de Apuntado ADS
+| Campo | Valor |
+|-------|-------|
+| **Tag** | Gameplay, Weapons |
+| **Importance** | Should Have |
+| **Estimated** | 4h |
+| **Logged** | 4h |
+| **Description** | Modo de apuntado (Aim Down Sights) con FOV reducido, velocidad reducida y arma centrada. |
+| **Subtasks** | ✅ Toggle ADS con clic derecho ✅ Cambio de FOV (90→70) ✅ Reducción de velocidad (50%) ✅ Arma centrada en pantalla ✅ Reducción de sway/bob mientras apunta ✅ Dispersión reducida en ADS |
+
+### Tarea 3.6: Sistema de Agujeros de Bala
+| Campo | Valor |
+|-------|-------|
+| **Tag** | Visual, Combat |
+| **Importance** | Should Have |
+| **Estimated** | 3h |
+| **Logged** | 3h |
+| **Description** | Manager de decals con object pooling para impactos de bala en paredes y suelos. |
+| **Subtasks** | ✅ BulletHoleManager.cs (singleton) ✅ Pool de 50 decals reutilizables ✅ Orientación según normal de superficie ✅ Offset para evitar z-fighting ✅ Fade out después de 30s ✅ Integración con Bullet.cs |
+
+### Tarea 3.7: Crosshair Dinámico con Dispersión
+| Campo | Valor |
+|-------|-------|
+| **Tag** | UI, Gameplay |
+| **Importance** | Should Have |
+| **Estimated** | 3h |
+| **Logged** | 3h |
+| **Description** | UI crosshair de 4 líneas que muestra dispersión actual del arma según estado de movimiento. |
+| **Subtasks** | ✅ CrosshairController.cs ✅ 4 líneas UI (arriba/abajo/izquierda/derecha) ✅ Separación basada en dispersión actual ✅ Valores por estado (idle, walking, sprinting, ADS) ✅ Creación programática si no hay referencia ✅ Mostrar/ocultar con posesión |
+
+### Tarea 3.8: Screen Shake con Cinemachine Impulse
+| Campo | Valor |
+|-------|-------|
+| **Tag** | Visual, Feedback |
+| **Importance** | Should Have |
+| **Estimated** | 2h |
+| **Logged** | 2h |
+| **Description** | Sistema de screen shake usando Cinemachine Impulse Source/Listener para retroalimentación de disparos. |
+| **Subtasks** | ✅ CinemachineImpulseSource en jugador ✅ CinemachineImpulseListener en VCams ✅ Trigger de impulso al disparar ✅ Intensidad configurable |
+
+### Tarea 3.9: Refactorización Sistema de Salto
+| Campo | Valor |
+|-------|-------|
+| **Tag** | Refactor, Gameplay |
+| **Importance** | Should Have |
+| **Estimated** | 2h |
+| **Logged** | 2h |
+| **Description** | Limpieza y simplificación del sistema de salto, eliminando código redundante y mejorando mantenibilidad. |
+| **Subtasks** | ✅ Consolidar lógica de salto ✅ Eliminar variables no usadas ✅ Mejorar legibilidad del código |
+
+---
+
+# 📊 RESUMEN SPRINT 3
+
+| Categoría | Horas Estimadas | Horas Logueadas |
+|-----------|-----------------|------------------|
+| Programming | 42h | 42h |
+| **TOTAL SPRINT 3** | **42h** | **42h** |
+
+---
+
+# 🏃 SPRINT 4 - Armas y Tipos de Enemigos (PENDIENTE)
+
+## 📁 Categoría: Programming
+
+### Tarea 4.1: Sistema de Daño y Salud
 | Campo | Valor |
 |-------|-------|
 | **Tag** | Combat, Core |
@@ -271,7 +376,7 @@
 | **Description** | Implementar componente Health y sistema de daño completo para enemigos y jugador. |
 | **Subtasks** | ⬜ Componente Health con vida actual/máxima ⬜ Método TakeDamage(float) ⬜ Evento OnDeath ⬜ Bullet.OnTriggerEnter aplica daño ⬜ Feedback visual de impacto ⬜ Muerte del enemigo (animación/ragdoll) |
 
-### Tarea 3.2: Arma Cuerpo a Cuerpo - Tubería
+### Tarea 4.2: Arma Cuerpo a Cuerpo - Tubería
 | Campo | Valor |
 |-------|-------|
 | **Tag** | Weapons, Combat |
@@ -281,7 +386,7 @@
 | **Description** | Implementar arma melee con animación de golpe, detección de colisión y daño. |
 | **Subtasks** | ⬜ WeaponData para Pipe (daño, alcance, cooldown) ⬜ Añadir Melee a WeaponType enum ⬜ Sistema de ataque melee (hitbox temporal) ⬜ Animación de swing ⬜ Detección de enemigos en área de golpe ⬜ Integración con InventoryHolder |
 
-### Tarea 3.3: Escopeta
+### Tarea 4.3: Escopeta
 | Campo | Valor |
 |-------|-------|
 | **Tag** | Weapons, Combat |
@@ -291,7 +396,7 @@
 | **Description** | Arma de fuego con disparo múltiple (pellets) y dispersión amplia. |
 | **Subtasks** | ⬜ WeaponData para Shotgun (daño, pellets, dispersión) ⬜ Disparo de múltiples balas en cono ⬜ Mayor retroceso/cooldown que pistola ⬜ Menor capacidad de cargador ⬜ Modelo visual y pickup |
 
-### Tarea 3.4: Tipo de Enemigo 1
+### Tarea 4.4: Tipo de Enemigo 1
 | Campo | Valor |
 |-------|-------|
 | **Tag** | AI, Enemy |
@@ -301,7 +406,7 @@
 | **Description** | Primer tipo de enemigo con comportamiento específico. Detalles a definir antes del sprint. |
 | **Subtasks** | ⬜ Definir comportamiento único ⬜ Parámetros de IA diferenciados ⬜ Modelo/sprite distintivo ⬜ Integración con sistema existente |
 
-### Tarea 3.5: Tipo de Enemigo 2
+### Tarea 4.5: Tipo de Enemigo 2
 | Campo | Valor |
 |-------|-------|
 | **Tag** | AI, Enemy |
@@ -311,7 +416,7 @@
 | **Description** | Segundo tipo de enemigo con comportamiento específico. Detalles a definir antes del sprint. |
 | **Subtasks** | ⬜ Definir comportamiento único ⬜ Parámetros de IA diferenciados ⬜ Modelo/sprite distintivo ⬜ Integración con sistema existente |
 
-### Tarea 3.6: Sistema de Spawning de Enemigos
+### Tarea 4.6: Sistema de Spawning de Enemigos
 | Campo | Valor |
 |-------|-------|
 | **Tag** | AI, Core |
@@ -325,7 +430,7 @@
 
 ## 📁 Categoría: Art
 
-### Tarea 3.7: Assets de Nuevas Armas
+### Tarea 4.7: Assets de Nuevas Armas
 | Campo | Valor |
 |-------|-------|
 | **Tag** | Art, Weapons |
@@ -335,7 +440,7 @@
 | **Description** | Crear modelos/sprites para tubería y escopeta. |
 | **Subtasks** | ⬜ Modelo tubería (en mano y pickup) ⬜ Modelo escopeta (en mano y pickup) ⬜ Efectos visuales de golpe melee ⬜ Efectos de disparo escopeta |
 
-### Tarea 3.8: Assets de Tipos de Enemigos
+### Tarea 4.8: Assets de Tipos de Enemigos
 | Campo | Valor |
 |-------|-------|
 | **Tag** | Art, Enemy |
@@ -347,13 +452,13 @@
 
 ---
 
-# 📊 RESUMEN SPRINT 3
+# 📊 RESUMEN SPRINT 4
 
 | Categoría | Horas Estimadas |
 |-----------|-----------------|
 | Programming | 40h |
 | Art | 14h |
-| **TOTAL SPRINT 3** | **54h** |
+| **TOTAL SPRINT 4** | **54h** |
 
 ---
 
@@ -427,16 +532,17 @@
 |-------------|----------|----------|--------|
 | **Sprint 1** | 62h | 62h | ✅ Completado |
 | **Sprint 2** | 65h | 65h | ✅ Completado |
-| **Sprint 3** | 54h | 0h | ⬜ Pendiente |
+| **Sprint 3** | 42h | 42h | ✅ Completado |
+| **Sprint 4** | 54h | 0h | ⬜ Pendiente |
 | **Backlog** | 83h | 0h | 📦 Por planificar |
-| **TOTAL** | **264h** | **127h** | 48% |
+| **TOTAL** | **306h** | **169h** | 55% |
 
 ---
 
 # 📝 NOTAS PARA IMPORTAR A HACKNPLAN
 
 1. **Crear Proyecto**: "Headcrab Miami TFG"
-2. **Crear Milestones**: Sprint 1, Sprint 2, Sprint 3, Backlog
+2. **Crear Milestones**: Sprint 1, Sprint 2, Sprint 3, Sprint 4, Backlog
 3. **Categorías disponibles**: Programming, Art, Design, Sound, Bug
 4. **Tags sugeridos**: Core, Player, Enemy, AI, Weapons, Combat, UI, Level Design, Audio, Docs, VFX
 

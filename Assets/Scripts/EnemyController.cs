@@ -99,6 +99,9 @@ public class EnemyController : MonoBehaviour
             navAgent.enabled = false;
         }
         
+        // Ocultar modelo para vista en primera persona
+        SetModelVisible(false);
+        
         Debug.Log($"{name} poseído");
     }
 
@@ -113,6 +116,21 @@ public class EnemyController : MonoBehaviour
             navAgent.isStopped = false;
         }
         
+        // Mostrar modelo de nuevo
+        SetModelVisible(true);
+        
         Debug.Log($"{name} liberado");
+    }
+    
+    /// <summary>
+    /// Muestra u oculta todos los renderers del modelo (para primera persona)
+    /// </summary>
+    public void SetModelVisible(bool visible)
+    {
+        Renderer[] renderers = GetComponentsInChildren<Renderer>();
+        foreach (var renderer in renderers)
+        {
+            renderer.enabled = visible;
+        }
     }
 }

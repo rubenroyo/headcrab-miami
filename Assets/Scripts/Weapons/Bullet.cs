@@ -68,6 +68,8 @@ public class Bullet : MonoBehaviour
         // Impacto con pared
         if (otherLayer == wallLayer)
         {
+            // Crear agujero de bala
+            SpawnBulletHole(other);
             Deactivate();
             return;
         }
@@ -84,6 +86,30 @@ public class Bullet : MonoBehaviour
                 Deactivate();
                 return;
             }
+        }
+    }
+    
+    private void SpawnBulletHole(Collider hitCollider)
+    {
+        if (BulletHoleManager.Instance == null) return;
+        
+        // Hacer raycast para obtener el punto exacto y la normal
+        Vector3 rayOrigin = transform.position - transform.forward * 0.5f;
+        Vector3 rayDirection = transform.forward;
+        
+        RaycastHit hit;
+        if (Physics.Raycast(rayOrigin, rayDirection, out hit, 2f, 1 << wallLayer))
+        {
+            BulletHoleManager.Instance.SpawnBulletHole(hit.point, hit.normal);
+        }
+        else
+        {
+            // Fallback: usar posición de la bala y normal aproximada
+            Vector3 closestPoint = hitCollider.ClosestPoint(transform.position);
+            Vector3 normal = (transform.position - closestPoint).normalized;
+            if (normal == Vector3.zero) normal = -transform.forward;
+            
+            BulletHoleManager.Instance.SpawnBulletHole(closestPoint, normal);
         }
     }
     

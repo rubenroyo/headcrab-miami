@@ -40,7 +40,30 @@ public class WeaponType : ScriptableObject
     [Tooltip("Prefab del cargador en el SUELO (para que la IA pueda detectarlo)")]
     public GameObject magazinePickupPrefab;
     
-    [Header("Posicionamiento Equipada")]
+    [Header("Primera Persona (FPS)")]
+    [Tooltip("Prefab del arma para vista FPS (mano + pistola). Se muestra durante posesión.")]
+    public GameObject fpsPrefab;
+    
+    [Tooltip("Posición del modelo FPS relativo al punto de ojos")]
+    public Vector3 fpsPositionOffset = new Vector3(0.2f, -0.2f, 0.4f);
+    
+    [Tooltip("Rotación del modelo FPS")]
+    public Vector3 fpsRotationOffset = Vector3.zero;
+    
+    [Header("Recoil (Retroceso FPS)")]
+    [Tooltip("Ángulo de rotación del retroceso en el eje Z (hacia arriba)")]
+    public float recoilAngle = 15f;
+    
+    [Tooltip("Duración del retroceso (subida)")]
+    public float recoilDuration = 0.05f;
+    
+    [Tooltip("Duración de la recuperación (bajada)")]
+    public float recoilRecoveryDuration = 0.15f;
+    
+    [Tooltip("Intensidad del camera shake al disparar")]
+    public float fireShakeIntensity = 0.15f;
+    
+    [Header("Posicionamiento Equipada (Tercera Persona)")]
     [Tooltip("Offset local desde el punto de anclaje del enemigo")]
     public Vector3 equippedPositionOffset = new Vector3(0f, 0.5f, 0.75f);
     

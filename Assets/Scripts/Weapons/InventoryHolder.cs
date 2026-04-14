@@ -48,6 +48,17 @@ public class InventoryHolder : MonoBehaviour
             weaponAnchor = transform;
     }
     
+    void Start()
+    {
+        // Si hay un arma configurada en el Inspector, inicializar su visual y pool
+        if (HasWeapon)
+        {
+            CreateWeaponVisual();
+            InitializeBulletPool();
+            Debug.Log($"{gameObject.name}: Inicia con {equippedWeapon.weaponType.weaponName} ({equippedWeapon.currentBullets} balas)");
+        }
+    }
+    
     /// <summary>
     /// Recibe daño
     /// </summary>
@@ -147,6 +158,17 @@ public class InventoryHolder : MonoBehaviour
     }
     
     /// <summary>
+    /// Muestra u oculta el arma equipada de tercera persona (para alternar con vista FPS)
+    /// </summary>
+    public void SetWeaponVisualVisible(bool visible)
+    {
+        if (equippedWeaponVisual != null)
+        {
+            equippedWeaponVisual.SetActive(visible);
+        }
+    }
+    
+    /// <summary>
     /// Suelta el arma actual y la instancia como pickup en el suelo
     /// </summary>
     public void DropWeapon()
@@ -213,6 +235,17 @@ public class InventoryHolder : MonoBehaviour
         
         Debug.Log($"{type.weaponName}: Disparo. Balas restantes: {equippedWeapon.currentBullets}");
         return true;
+    }
+    
+    /// <summary>
+    /// Obtiene la posición del cañón del arma equipada
+    /// </summary>
+    public Vector3 GetMuzzlePosition()
+    {
+        if (!HasWeapon || weaponAnchor == null) return transform.position;
+        
+        WeaponType type = equippedWeapon.weaponType;
+        return weaponAnchor.position + weaponAnchor.TransformDirection(type.equippedPositionOffset + type.muzzleOffset);
     }
     
     private void SpawnBullet(Vector3 origin, Vector3 direction)
