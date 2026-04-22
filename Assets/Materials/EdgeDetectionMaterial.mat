@@ -94,7 +94,7 @@ Material:
     - _Cull: 2
     - _Cutoff: 0.5
     - _DarkenAmount: 0.5
-    - _DebugMode: 8
+    - _DebugMode: 1
     - _DepthAngleMultiplier: 4
     - _DepthFar: 20
     - _DepthNear: 1

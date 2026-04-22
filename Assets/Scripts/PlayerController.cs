@@ -3,8 +3,8 @@ using UnityEngine;
 public enum PlayerState
 {
     Normal,
-    Aiming,
-    Jumping,
+    ChargingJump,  // Cargando salto (clic derecho mantenido)
+    Jumping,       // En el aire con física
     Possessing
 }
 
@@ -32,21 +32,26 @@ public class PlayerController : MonoBehaviour
     [Tooltip("Velocidad de rotación del jugador hacia la dirección de movimiento")]
     [SerializeField] private float rotationSpeed = 10f;
     
-    [Header("Salto Cinemático")]
-    [Tooltip("Duración del 'wind-up' al inicio del salto (slow motion dramático)")]
-    [SerializeField] private float jumpWindUpDuration = 0.08f;
+    [Header("Salto con Carga")]
+    [Tooltip("El tiempo de carga viene del JumpTrajectoryVisualizer")]
+    [SerializeField] private float jumpChargeTime = 1.5f;  // Se sincroniza con JumpTrajectoryVisualizer
     
-    [Tooltip("Escala de tiempo durante el wind-up")]
-    [SerializeField] private float jumpWindUpTimeScale = 0.1f;
+    [Tooltip("Fuerza mínima de salto")]
+    [SerializeField] private float minJumpForce = 5f;
     
-    [Tooltip("Escala de tiempo durante el vuelo (1 = normal, >1 = más rápido)")]
-    [SerializeField] private float jumpFlightTimeScale = 1.2f;
+    [Tooltip("Fuerza máxima de salto (al cargar completamente)")]
+    [SerializeField] private float maxJumpForce = 25f;
     
-    [Tooltip("Curva de velocidad del salto (X = progreso 0-1, Y = multiplicador de velocidad)")]
-    [SerializeField] private AnimationCurve jumpSpeedCurve = AnimationCurve.EaseInOut(0f, 0f, 1f, 1f);
+    [Tooltip("Gravedad para el salto físico")]
+    [SerializeField] private float jumpGravity = 30f;
     
-    // Duración del salto actual (viene del JumpTrajectoryVisualizer)
-    private float currentJumpDuration;
+    // Estado de carga
+    private float chargeTimer = 0f;
+    private float chargeProgress = 0f;  // 0-1
+    
+    // Estado de salto físico
+    private Vector3 jumpVelocity;
+    private bool isJumping = false;
 
     [Header("Posesión")]
     [SerializeField] private float possessionCooldown = 0.5f;
@@ -71,13 +76,6 @@ public class PlayerController : MonoBehaviour
 
     public PlayerState CurrentState { get; private set; } = PlayerState.Normal;
 
-    // Salto físico
-    private float jumpElapsedTime;
-    private Vector3[] jumpTrajectoryPoints;
-    private Vector3 jumpStartPosition;
-    private bool isInWindUp = false;
-    private float windUpTimer = 0f;
-
     // Posesión
     private EnemyController possessedEnemy;
     private float lastDismountTime = -999f;
@@ -89,50 +87,24 @@ public class PlayerController : MonoBehaviour
 
     // Test-friendly public accessors
     public float MoveSpeed { get => moveSpeed; set => moveSpeed = value; }
-    public float CurrentJumpDuration => currentJumpDuration;
+    public float ChargeProgress => chargeProgress;  // Nuevo: expone el progreso de carga
     public EnemyController PossessedEnemy => possessedEnemy;
 
     /// <summary>
-    /// Inicia un salto con puntos de trayectoria personalizados (útil para tests y dismount).
+    /// Inicia un salto con una dirección y fuerza especificadas (útil para tests y dismount).
     /// </summary>
-    public void StartJumpWithPoints(Vector3[] points, float durationOverride = -1f)
+    public void StartJumpWithVelocity(Vector3 velocity)
     {
-        jumpTrajectoryPoints = points;
-
-        if (jumpTrajectoryPoints == null || jumpTrajectoryPoints.Length < 2)
-            return;
-
-        // Calcular duración basada en la distancia de la trayectoria
-        if (durationOverride > 0f)
-        {
-            currentJumpDuration = durationOverride;
-        }
-        else
-        {
-            // Calcular distancia total y estimar duración (similar a física de parábola)
-            float totalDistance = 0f;
-            for (int i = 0; i < jumpTrajectoryPoints.Length - 1; i++)
-                totalDistance += Vector3.Distance(jumpTrajectoryPoints[i], jumpTrajectoryPoints[i + 1]);
-            
-            // Duración proporcional: ~0.5s para trayectorias cortas, ~1s para largas
-            currentJumpDuration = Mathf.Lerp(0.3f, 1f, Mathf.Clamp01(totalDistance / 15f));
-        }
-
+        jumpVelocity = velocity;
+        isJumping = true;
         CurrentState = PlayerState.Jumping;
-        jumpElapsedTime = 0f;
         
-        // Cachear distancias para interpolación
-        CacheTrajectoryDistances();
-
-        cameraFollow?.SetJumping(true, currentJumpDuration);
+        Debug.Log($"[Player] StartJumpWithVelocity: {velocity}");
     }
 
     void Awake()
     {
         characterController = GetComponent<CharacterController>();
-        
-        // Forzar la curva a empezar en 0 (por si el valor serializado está mal)
-        jumpSpeedCurve = AnimationCurve.EaseInOut(0f, 0f, 1f, 1f);
     }
 
     void Start()
@@ -186,8 +158,8 @@ public class PlayerController : MonoBehaviour
                 UpdateNormal();
                 break;
 
-            case PlayerState.Aiming:
-                UpdateAiming();
+            case PlayerState.ChargingJump:
+                UpdateChargingJump();
                 break;
 
             case PlayerState.Jumping:
@@ -207,181 +179,89 @@ public class PlayerController : MonoBehaviour
         HandleMovement();
         // En FPS, la rotación la maneja FirstPersonCamera
 
+        // Clic derecho = empezar a cargar salto
         if (Input.GetMouseButtonDown(1))
-            EnterAiming();
+            EnterChargingJump();
 
         // El jugador sin poseer no puede disparar (es una seta)
     }
 
-    void UpdateAiming()
+    void UpdateChargingJump()
     {
-        HandleMovement();
-        // En FPS, la rotación la maneja FirstPersonCamera
-
-        // Clic izquierdo mientras apuntas = saltar
-        if (Input.GetMouseButtonDown(0))
-            StartJump();
-
+        // El personaje se DETIENE mientras carga (no HandleMovement)
+        
+        // Actualizar carga
+        chargeTimer += Time.deltaTime;
+        chargeProgress = Mathf.Clamp01(chargeTimer / jumpChargeTime);
+        
+        // Actualizar visualizador con el progreso de carga
+        if (jumpTrajectoryVisualizer != null)
+        {
+            jumpTrajectoryVisualizer.SetChargeProgress(chargeProgress);
+        }
+        
+        // Sincronizar cámara con el progreso de carga (transición ThirdPerson → Aim)
+        if (cinemachineCamera != null)
+        {
+            cinemachineCamera.SetChargeProgress(chargeProgress);
+        }
+        
+        // Al soltar clic derecho = ejecutar salto
         if (Input.GetMouseButtonUp(1))
-            ExitAiming();
+        {
+            ExecuteJump();
+        }
     }
 
     void UpdateJump()
     {
-        // Verificar que tenemos puntos de trayectoria
-        if (jumpTrajectoryPoints == null || jumpTrajectoryPoints.Length < 2)
+        if (!isJumping)
         {
-            Debug.LogWarning("[Jump] No trajectory points!");
             EndJump();
             return;
         }
         
-        // Verificar estado de los arrays
-        if (trajectoryDistances == null)
+        // Aplicar gravedad a la velocidad
+        jumpVelocity.y -= jumpGravity * Time.deltaTime;
+        
+        // Mover con CharacterController
+        if (characterController != null && characterController.enabled)
         {
-            Debug.LogError("[Jump] trajectoryDistances is NULL!");
-            EndJump();
-            return;
+            characterController.Move(jumpVelocity * Time.deltaTime);
+        }
+        else
+        {
+            // Fallback si CharacterController está deshabilitado
+            transform.position += jumpVelocity * Time.deltaTime;
         }
         
-        // Manejar wind-up (slow motion inicial)
-        if (isInWindUp)
+        // Rotar hacia la dirección de movimiento horizontal
+        Vector3 horizontalVel = new Vector3(jumpVelocity.x, 0, jumpVelocity.z);
+        if (horizontalVel.sqrMagnitude > 0.1f)
         {
-            windUpTimer += Time.unscaledDeltaTime;
-            
-            if (windUpTimer >= jumpWindUpDuration)
-            {
-                // Terminar wind-up, acelerar al vuelo
-                isInWindUp = false;
-                Time.timeScale = jumpFlightTimeScale;
-                Time.fixedDeltaTime = 0.02f * jumpFlightTimeScale;
-            }
-            else
-            {
-                // Todavía en wind-up, no mover
-                return;
-            }
+            Quaternion targetRot = Quaternion.LookRotation(horizontalVel.normalized);
+            transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, 10f * Time.deltaTime);
         }
-        
-        // Actualizar tiempo del salto
-        jumpElapsedTime += Time.deltaTime;
-        float progress = Mathf.Clamp01(jumpElapsedTime / currentJumpDuration);
-        
-        // Aplicar curva de velocidad para sensación más satisfactoria
-        float curvedProgress = jumpSpeedCurve.Evaluate(progress);
-        
-        // Seguir los puntos de la trayectoria (interpolación por distancia)
-        Vector3 position = GetPositionAlongTrajectoryByDistance(curvedProgress);
-        
-        transform.position = position;
-        
-        // Rotar hacia la dirección de movimiento (suave)
-        Vector3 moveDir = GetTrajectoryDirectionAt(curvedProgress);
-        moveDir.y = 0f;
-        if (moveDir.sqrMagnitude > 0.01f)
-        {
-            Quaternion targetRot = Quaternion.LookRotation(moveDir.normalized);
-            transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, 15f * Time.deltaTime);
-        }
-        
-        // Actualizar progreso en la cámara
-        if (cinemachineCamera != null)
-            cinemachineCamera.UpdateJumpProgress(progress);
-        else if (thirdPersonCamera != null)
-            thirdPersonCamera.UpdateJumpProgress(progress);
         
         // Verificar colisión con enemigos para posesión
         CheckPossessionCollision();
         
-        // Verificar si hemos llegado al final
-        if (progress >= 1f && CurrentState == PlayerState.Jumping)
+        // Verificar aterrizaje (tocando suelo)
+        if (characterController != null && characterController.isGrounded && jumpVelocity.y <= 0)
         {
             EndJump();
         }
-    }
-    
-    // Distancia total de la trayectoria (cacheada)
-    private float trajectoryTotalDistance = 0f;
-    private float[] trajectoryDistances = null;
-    
-    /// <summary>
-    /// Calcula las distancias acumuladas de cada punto de la trayectoria
-    /// </summary>
-    void CacheTrajectoryDistances()
-    {
-        if (jumpTrajectoryPoints == null || jumpTrajectoryPoints.Length < 2)
+        // Fallback: raycast hacia abajo si no usamos CharacterController en este frame
+        else if (characterController == null || !characterController.enabled)
         {
-            trajectoryTotalDistance = 0f;
-            trajectoryDistances = null;
-            return;
-        }
-        
-        trajectoryDistances = new float[jumpTrajectoryPoints.Length];
-        trajectoryDistances[0] = 0f;
-        
-        for (int i = 1; i < jumpTrajectoryPoints.Length; i++)
-        {
-            trajectoryDistances[i] = trajectoryDistances[i - 1] + 
-                Vector3.Distance(jumpTrajectoryPoints[i - 1], jumpTrajectoryPoints[i]);
-        }
-        
-        trajectoryTotalDistance = trajectoryDistances[jumpTrajectoryPoints.Length - 1];
-    }
-    
-    /// <summary>
-    /// Obtiene la posición en la trayectoria basándose en distancia recorrida (no índice)
-    /// </summary>
-    Vector3 GetPositionAlongTrajectoryByDistance(float t)
-    {
-        if (trajectoryDistances == null || trajectoryTotalDistance <= 0f)
-            return transform.position;
-        
-        float targetDistance = t * trajectoryTotalDistance;
-        
-        // Buscar el segmento donde estamos
-        for (int i = 0; i < trajectoryDistances.Length - 1; i++)
-        {
-            if (targetDistance <= trajectoryDistances[i + 1])
+            if (Physics.Raycast(transform.position + Vector3.up * 0.1f, Vector3.down, 0.3f))
             {
-                float segmentStart = trajectoryDistances[i];
-                float segmentEnd = trajectoryDistances[i + 1];
-                float segmentLength = segmentEnd - segmentStart;
-                
-                if (segmentLength < 0.001f)
-                    return jumpTrajectoryPoints[i];
-                
-                float localT = (targetDistance - segmentStart) / segmentLength;
-                return Vector3.Lerp(jumpTrajectoryPoints[i], jumpTrajectoryPoints[i + 1], localT);
+                if (jumpVelocity.y <= 0)
+                    EndJump();
             }
         }
-        
-        // Al final de la trayectoria
-        return jumpTrajectoryPoints[jumpTrajectoryPoints.Length - 1];
     }
     
-    /// <summary>
-    /// Obtiene la dirección de movimiento en un punto de la trayectoria
-    /// </summary>
-    Vector3 GetTrajectoryDirectionAt(float t)
-    {
-        if (trajectoryDistances == null || trajectoryTotalDistance <= 0f || jumpTrajectoryPoints.Length < 2)
-            return transform.forward;
-        
-        float targetDistance = t * trajectoryTotalDistance;
-        
-        // Buscar el segmento donde estamos
-        for (int i = 0; i < trajectoryDistances.Length - 1; i++)
-        {
-            if (targetDistance <= trajectoryDistances[i + 1])
-            {
-                return (jumpTrajectoryPoints[i + 1] - jumpTrajectoryPoints[i]).normalized;
-            }
-        }
-        
-        // Al final
-        int last = jumpTrajectoryPoints.Length - 1;
-        return (jumpTrajectoryPoints[last] - jumpTrajectoryPoints[last - 1]).normalized;
-    }
 
     void UpdatePossessing()
     {
@@ -461,101 +341,86 @@ public class PlayerController : MonoBehaviour
 
     // ---------------- ACTIONS ----------------
 
-    void EnterAiming()
+    void EnterChargingJump()
     {
-        Debug.Log("[Player] EnterAiming()");
-        CurrentState = PlayerState.Aiming;
+        Debug.Log("[Player] EnterChargingJump()");
+        CurrentState = PlayerState.ChargingJump;
         
-        // Activar slow motion
+        // Resetear carga
+        chargeTimer = 0f;
+        chargeProgress = 0f;
+        
+        // Activar slow motion mientras carga
         Time.timeScale = aimTimeScale;
         Time.fixedDeltaTime = 0.02f * aimTimeScale;
         
-        // Activar modo aim en la cámara
+        // Iniciar transición de cámara (empezará desde ThirdPerson)
         if (cinemachineCamera != null)
-            cinemachineCamera.EnterAimMode();
-        else if (thirdPersonCamera != null)
-            thirdPersonCamera.EnterAimMode();
+        {
+            cinemachineCamera.EnterChargingMode();
+        }
         
-        // Activar visualizador de trayectoria
+        // Activar visualizador de trayectoria (solo visible en editor)
         if (jumpTrajectoryVisualizer != null)
         {
-            Debug.Log("[Player] Activating JumpTrajectoryVisualizer");
             jumpTrajectoryVisualizer.SetActive(true);
-        }
-        else
-        {
-            Debug.LogError("[Player] jumpTrajectoryVisualizer is NULL! Make sure to add JumpTrajectoryVisualizer component to a GameObject in the scene.");
+            // Sincronizar tiempo de carga con el visualizador
+            jumpChargeTime = jumpTrajectoryVisualizer.ChargeTime;
+            minJumpForce = jumpTrajectoryVisualizer.MinJumpForce;
+            maxJumpForce = jumpTrajectoryVisualizer.MaxJumpForce;
         }
     }
     
-    void ExitAiming()
+    void CancelChargingJump()
     {
-        Debug.Log("[Player] ExitAiming()");
+        Debug.Log("[Player] CancelChargingJump()");
         CurrentState = PlayerState.Normal;
         
         // Restaurar tiempo normal
         Time.timeScale = 1f;
         Time.fixedDeltaTime = 0.02f;
         
-        // Desactivar modo aim en la cámara
-        if (cinemachineCamera != null)
-            cinemachineCamera.ExitAimMode();
-        else if (thirdPersonCamera != null)
-            thirdPersonCamera.ExitAimMode();
+        // Resetear carga
+        chargeTimer = 0f;
+        chargeProgress = 0f;
         
-        // Desactivar visualizador de trayectoria
+        // Cancelar transición de cámara
+        if (cinemachineCamera != null)
+        {
+            cinemachineCamera.ExitChargingMode();
+        }
+        
+        // Desactivar visualizador
         if (jumpTrajectoryVisualizer != null)
             jumpTrajectoryVisualizer.SetActive(false);
     }
 
-    void StartJump()
+    void ExecuteJump()
     {
-        // Verificar que tenemos un punto de aterrizaje válido
-        if (jumpTrajectoryVisualizer == null || !jumpTrajectoryVisualizer.HasValidLanding)
+        Debug.Log($"[Player] ExecuteJump() - ChargeProgress: {chargeProgress:F2}");
+        
+        // Obtener velocidad de lanzamiento desde el visualizador
+        if (jumpTrajectoryVisualizer != null)
         {
-            Debug.Log("[Jump] No valid landing point - cannot jump");
-            return;
+            jumpVelocity = jumpTrajectoryVisualizer.GetLaunchVelocity(chargeProgress);
+            Debug.Log($"[Jump] Launch velocity: {jumpVelocity}, magnitude: {jumpVelocity.magnitude:F2}");
+        }
+        else
+        {
+            // Fallback si no hay visualizador
+            Vector3 cameraForward = Camera.main.transform.forward;
+            float force = Mathf.Lerp(minJumpForce, maxJumpForce, chargeProgress);
+            jumpVelocity = (cameraForward + Vector3.up * 0.5f).normalized * force;
+            Debug.LogWarning("[Jump] Using fallback velocity - no visualizer");
         }
         
-        // Copiar los puntos de trayectoria
-        Vector3[] sourcePoints = jumpTrajectoryVisualizer.TrajectoryPoints;
-        if (sourcePoints == null || sourcePoints.Length < 2)
-        {
-            Debug.Log("[Jump] Not enough trajectory points");
-            return;
-        }
-        
-        jumpTrajectoryPoints = new Vector3[sourcePoints.Length];
-        System.Array.Copy(sourcePoints, jumpTrajectoryPoints, sourcePoints.Length);
-        
-        // Guardar posición de inicio
-        jumpStartPosition = jumpTrajectoryVisualizer.StartPosition;
-        
-        // La duración viene directamente del visualizador (basada en la física de la parábola)
-        currentJumpDuration = jumpTrajectoryVisualizer.FlightDuration;
-        
-        // Cachear distancias para interpolación suave
-        CacheTrajectoryDistances();
-        
-        Debug.Log($"[JUMP] Start: {jumpStartPosition}, End: {jumpTrajectoryPoints[jumpTrajectoryPoints.Length - 1]}, Duration: {currentJumpDuration:F2}s");
+        // Restaurar tiempo normal para el salto
+        Time.timeScale = 1f;
+        Time.fixedDeltaTime = 0.02f;
         
         // Cambiar estado
         CurrentState = PlayerState.Jumping;
-        jumpElapsedTime = 0f;
-        
-        // Deshabilitar CharacterController durante el salto
-        if (characterController != null)
-            characterController.enabled = false;
-        
-        // Iniciar wind-up (slow motion dramático al despegar)
-        isInWindUp = true;
-        windUpTimer = 0f;
-        Time.timeScale = jumpWindUpTimeScale;
-        Time.fixedDeltaTime = 0.02f * jumpWindUpTimeScale;
-        
-        // Desactivar visualizador de trayectoria
-        if (jumpTrajectoryVisualizer != null)
-            jumpTrajectoryVisualizer.SetActive(false);
+        isJumping = true;
         
         // Activar modo salto en la cámara
         if (cinemachineCamera != null)
@@ -563,28 +428,30 @@ public class PlayerController : MonoBehaviour
         else if (thirdPersonCamera != null)
             thirdPersonCamera.EnterJumpMode();
         
-        // Rotar jugador hacia la dirección inicial
-        if (jumpTrajectoryPoints.Length >= 2)
+        // Desactivar visualizador de trayectoria
+        if (jumpTrajectoryVisualizer != null)
+            jumpTrajectoryVisualizer.SetActive(false);
+        
+        // Rotar jugador hacia la dirección horizontal del salto
+        Vector3 horizontalDir = jumpVelocity;
+        horizontalDir.y = 0f;
+        if (horizontalDir.magnitude > 0.1f)
         {
-            Vector3 jumpDir = (jumpTrajectoryPoints[1] - jumpTrajectoryPoints[0]);
-            jumpDir.y = 0f;
-            if (jumpDir.magnitude > 0.1f)
-            {
-                transform.rotation = Quaternion.LookRotation(jumpDir.normalized);
-            }
+            transform.rotation = Quaternion.LookRotation(horizontalDir.normalized);
         }
     }
 
     void EndJump()
     {
-        // Restaurar tiempo normal
+        Debug.Log("[Player] EndJump()");
+        
+        // Restaurar tiempo normal (por si acaso)
         Time.timeScale = 1f;
         Time.fixedDeltaTime = 0.02f;
-        isInWindUp = false;
         
-        // Reactivar CharacterController
-        if (characterController != null)
-            characterController.enabled = true;
+        // Reset estado de salto
+        isJumping = false;
+        jumpVelocity = Vector3.zero;
         
         // Salir del modo salto de la cámara y disparar shake
         if (cinemachineCamera != null)
@@ -600,19 +467,13 @@ public class PlayerController : MonoBehaviour
         
         if (CurrentState != PlayerState.Possessing)
         {
-            // Ajustar posición final al último punto de la trayectoria
-            if (jumpTrajectoryPoints != null && jumpTrajectoryPoints.Length > 0)
-            {
-                transform.position = jumpTrajectoryPoints[jumpTrajectoryPoints.Length - 1];
-            }
-
             if (cameraFollow != null)
                 cameraFollow.SetJumping(false, 0f);
 
-            // Si el clic derecho sigue pulsado, reactivar modo apuntado
+            // Si el clic derecho sigue pulsado, reactivar modo de carga
             if (Input.GetMouseButton(1))
             {
-                EnterAiming();
+                EnterChargingJump();
             }
             else
             {
@@ -645,23 +506,20 @@ public class PlayerController : MonoBehaviour
         // Guardar si tenemos que reactivar el aim después
         bool wasHoldingAim = Input.GetMouseButton(1);
         
-        // Restaurar tiempo normal (por si estábamos en wind-up o vuelo)
+        // Restaurar tiempo normal (por si estábamos cargando salto)
         Time.timeScale = 1f;
         Time.fixedDeltaTime = 0.02f;
-        isInWindUp = false;
+        
+        // Detener salto si estábamos saltando
+        isJumping = false;
+        jumpVelocity = Vector3.zero;
         
         // Reactivar CharacterController
         if (characterController != null)
             characterController.enabled = true;
         
-        // Forzar estado normal temporalmente para que EndJump no reactive aim
+        // Forzar estado normal temporalmente
         CurrentState = PlayerState.Normal;
-        
-        if (jumpTrajectoryPoints != null && jumpTrajectoryPoints.Length > 0)
-        {
-            Vector3 finalPos = jumpTrajectoryPoints[^1];
-            transform.position = new Vector3(finalPos.x, 0f, finalPos.z);
-        }
 
         if (cameraFollow != null)
             cameraFollow.SetJumping(false, 0f);
@@ -788,9 +646,9 @@ public class PlayerController : MonoBehaviour
         bool isThirdPerson = cinemachineCamera != null || thirdPersonCamera != null;
         if (isThirdPerson)
         {
-            if (CurrentState == PlayerState.Aiming)
+            if (CurrentState == PlayerState.ChargingJump)
             {
-                // Durante aim: siempre mirar hacia donde mira la cámara
+                // Durante carga de salto: siempre mirar hacia donde mira la cámara
                 // Usar unscaledDeltaTime para que sea fluido en slow motion
                 Quaternion targetRotation = Quaternion.LookRotation(forward);
                 transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, rotationSpeed * Time.unscaledDeltaTime);
@@ -969,25 +827,6 @@ public class PlayerController : MonoBehaviour
         }
     }
 
-    Vector3 GetPositionAlongTrajectory(float distance)
-    {
-        if (jumpTrajectoryPoints == null || jumpTrajectoryPoints.Length == 0)
-            return transform.position;
-
-        float current = 0f;
-
-        for (int i = 0; i < jumpTrajectoryPoints.Length - 1; i++)
-        {
-            float segLen = Vector3.Distance(jumpTrajectoryPoints[i], jumpTrajectoryPoints[i + 1]);
-            if (current + segLen >= distance)
-                return Vector3.Lerp(jumpTrajectoryPoints[i], jumpTrajectoryPoints[i + 1],
-                                    (distance - current) / segLen);
-            current += segLen;
-        }
-
-        return jumpTrajectoryPoints[^1];
-    }
-
     void StartDismount()
     {
         if (possessedEnemy == null) return;
@@ -1002,42 +841,30 @@ public class PlayerController : MonoBehaviour
         if (cinemachineCamera != null)
             cinemachineCamera.ExitPossessionMode(transform);
         
-        if (jumpTrajectoryPoints == null || jumpTrajectoryPoints.Length == 0)
-        {
-            Vector3 currentPos = transform.position;
-            Ray groundRay = new Ray(currentPos, Vector3.down);
-            Vector3 groundPoint;
-            
-            if (Physics.Raycast(groundRay, out RaycastHit hit))
-                groundPoint = new Vector3(hit.point.x, 0f, hit.point.z);
-            else
-                groundPoint = new Vector3(currentPos.x, 0f, currentPos.z);
-            
-            jumpTrajectoryPoints = new Vector3[] { currentPos, groundPoint };
-        }
-        else
-        {
-            Vector3 lastPoint = jumpTrajectoryPoints[^1];
-            jumpTrajectoryPoints[^1] = new Vector3(lastPoint.x, 0f, lastPoint.z);
-        }
-
-        // Calcular duración basada en la distancia
-        float totalDistance = 0f;
-        for (int i = 0; i < jumpTrajectoryPoints.Length - 1; i++)
-            totalDistance += Vector3.Distance(jumpTrajectoryPoints[i], jumpTrajectoryPoints[i + 1]);
-        currentJumpDuration = Mathf.Lerp(0.3f, 1f, Mathf.Clamp01(totalDistance / 15f));
+        // Calcular velocidad de salida para el desmonte (salto pequeño hacia abajo)
+        Vector3 currentPos = transform.position;
+        Vector3 targetPos = currentPos + Vector3.down * 2f; // Apuntar hacia abajo
         
-        // Cachear distancias
-        CacheTrajectoryDistances();
-
-        jumpElapsedTime = 0f;
+        // Buscar punto de suelo
+        if (Physics.Raycast(currentPos, Vector3.down, out RaycastHit hit, 10f))
+        {
+            targetPos = hit.point;
+        }
+        
+        // Crear velocidad inicial pequeña (el jugador cae principalmente por gravedad)
+        Vector3 direction = (targetPos - currentPos).normalized;
+        float dismountForce = 5f;
+        jumpVelocity = direction * dismountForce + Vector3.up * 2f; // Pequeño impulso hacia arriba
+        
+        // Entrar en estado de salto con física
+        isJumping = true;
         CurrentState = PlayerState.Jumping;
 
         if (cameraFollow != null)
         {
             cameraFollow.SetTarget(transform);
             cameraFollow.SetPossessedMode(false);
-            cameraFollow.SetJumping(true, currentJumpDuration);
+            cameraFollow.SetJumping(true, 0.5f);
         }
     }
     

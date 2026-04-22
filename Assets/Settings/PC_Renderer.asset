@@ -86,6 +86,7 @@ MonoBehaviour:
   settings:
     edgeDetectionMaterial: {fileID: 2100000, guid: b7cf7f74683a5b742a124cca18b0cab7, type: 2}
     renderPassEvent: 550
+    debugMode: 1
     depthThreshold: 1
     normalThreshold: 1
     edgeThickness: 1

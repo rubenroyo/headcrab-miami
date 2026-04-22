@@ -178,7 +178,7 @@ public class CrosshairController : MonoBehaviour
     private void CreateCrosshairUI()
     {
         // Buscar o crear Canvas
-        Canvas canvas = FindObjectOfType<Canvas>();
+        Canvas canvas = FindFirstObjectByType<Canvas>();
         if (canvas == null)
         {
             GameObject canvasObj = new GameObject("CrosshairCanvas");

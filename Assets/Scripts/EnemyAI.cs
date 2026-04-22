@@ -113,6 +113,9 @@ public class EnemyAI : MonoBehaviour
     private float itemScanTimer; // Timer para no escanear items cada frame
     private TargetPriority currentTargetPriority = TargetPriority.None; // Prioridad del objetivo actual
     private bool isCommittedToTarget = false; // True si está comprometido con un objetivo
+
+    // Al inicio de la clase, junto a los otros componentes
+    private Animator animator;
     
     // Combate
     private bool isRepositioning = false; // True si está ajustando distancia
@@ -152,6 +155,7 @@ public class EnemyAI : MonoBehaviour
         enemyController = GetComponent<EnemyController>();
         inventory = GetComponent<InventoryHolder>();
         wanderOrigin = transform.position;
+        animator = GetComponent<Animator>();
     }
 
     void Start()
@@ -167,7 +171,6 @@ public class EnemyAI : MonoBehaviour
     /// </summary>
     private void LoadPatrolRoute()
     {
-        // Si no hay objeto asignado, buscar por ID
         if (patrolRouteObject == null && !string.IsNullOrEmpty(patrolRouteId))
         {
             GameObject routeObj = GameObject.Find(patrolRouteId);
@@ -177,13 +180,21 @@ public class EnemyAI : MonoBehaviour
             }
         }
 
-        // Cargar waypoints desde los hijos del objeto ruta
         if (patrolRouteObject != null && patrolRouteObject.childCount > 0)
         {
+            // Guardar tiempos existentes antes de limpiar
+            var existingWaitTimes = new Dictionary<Transform, float>();
+            foreach (var pp in patrolRoute)
+            {
+                if (pp.point != null)
+                    existingWaitTimes[pp.point] = pp.waitTime;
+            }
+
             patrolRoute.Clear();
             foreach (Transform child in patrolRouteObject)
             {
-                patrolRoute.Add(new PatrolPoint(child, 0f));
+                float wait = existingWaitTimes.ContainsKey(child) ? existingWaitTimes[child] : 0f;
+                patrolRoute.Add(new PatrolPoint(child, wait));
             }
             Debug.Log($"{name}: Cargados {patrolRoute.Count} waypoints desde '{patrolRouteObject.name}'");
         }
@@ -191,6 +202,7 @@ public class EnemyAI : MonoBehaviour
 
     void Update()
     {
+
         // No hacer nada si el agente no está sobre el NavMesh
         if (navAgent == null || !navAgent.isOnNavMesh)
         {
@@ -250,6 +262,9 @@ public class EnemyAI : MonoBehaviour
                 UpdateSeekingItem();
                 break;
         }
+
+        // Al final del Update(), tras el switch
+        UpdateAnimations();
     }
 
     /// <summary>
@@ -469,7 +484,6 @@ public class EnemyAI : MonoBehaviour
 
     private void UpdatePatrolling()
     {
-        navAgent.isStopped = false;
         navAgent.speed = moveSpeed;
 
         if (patrolRoute.Count == 0)
@@ -481,14 +495,18 @@ public class EnemyAI : MonoBehaviour
         // Si estamos esperando en un punto
         if (isWaitingAtPatrolPoint)
         {
+            navAgent.isStopped = true; // mantener parado mientras espera
             patrolWaitTimer -= Time.deltaTime;
             if (patrolWaitTimer <= 0f)
             {
                 isWaitingAtPatrolPoint = false;
+                navAgent.isStopped = false;
                 MoveToNextPatrolPoint();
             }
             return;
         }
+
+        navAgent.isStopped = false;
 
         // Verificar si llegamos al punto actual
         if (HasReachedDestination())
@@ -1051,6 +1069,14 @@ public class EnemyAI : MonoBehaviour
     #endregion
 
     #region Helper Methods
+
+    private void UpdateAnimations()
+    {
+        if (animator == null) return;
+
+        bool isMoving = !navAgent.isStopped && navAgent.desiredVelocity.sqrMagnitude > 0.01f;
+        animator.SetBool("IsWalking", isMoving);
+    }
 
     private void SetState(AIState newState)
     {

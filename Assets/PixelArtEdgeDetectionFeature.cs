@@ -11,6 +11,10 @@ public class PixelArtEdgeDetectionFeature : ScriptableRendererFeature
         public Material edgeDetectionMaterial;
         public RenderPassEvent renderPassEvent = RenderPassEvent.BeforeRenderingPostProcessing;
         
+        [Header("Debug")]
+        [Tooltip("0=Magenta Test, 1=Bypass (SIN outlines), 2=Depth, 3=Normals, 4=Outer Edges, 5=Inner Edges, 6=Both Edges, 7=Image+Outer, 8=Final Result")]
+        [Range(0, 8)] public int debugMode = 8;
+        
         [Header("Edge Detection")]
         [Range(0f, 5f)] public float depthThreshold = 1.5f;
         [Range(0f, 5f)] public float normalThreshold = 0.4f;
@@ -99,6 +103,7 @@ public class PixelArtEdgeDetectionFeature : ScriptableRendererFeature
                 renderGraph, descriptor, "_EdgeDetectionTemp", false);
 
             // Set material properties
+            material.SetFloat("_DebugMode", settings.debugMode);
             material.SetFloat("_DepthThreshold", settings.depthThreshold);
             material.SetFloat("_NormalThreshold", settings.normalThreshold);
             material.SetFloat("_EdgeThickness", settings.edgeThickness);

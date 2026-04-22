@@ -79,6 +79,19 @@ public class CinemachineCameraController : MonoBehaviour
     private float jumpStartTime = 0f;
     private float jumpFOVStartValue = 0f;
     
+    // Estado de carga del salto (transición suave)
+    private bool isCharging = false;
+    private float chargeFOVStart;
+    private float chargeFOVTarget;
+    private Vector3 chargeFollowOffsetStart;
+    private Vector3 chargeFollowOffsetTarget;
+    private float chargeOrbitRadiusStart;
+    private float chargeOrbitRadiusTarget;
+    
+    // Componentes cacheados para la transición
+    private CinemachineOrbitalFollow thirdPersonOrbital;
+    private CinemachineOrbitalFollow aimOrbital;
+    
     // Cache
     private CinemachineCamera activeCamera;
     
@@ -170,6 +183,12 @@ public class CinemachineCameraController : MonoBehaviour
             vcamThirdPerson.Priority = activePriority;
             activeCamera = vcamThirdPerson;
         }
+        
+        // Cachear componentes OrbitalFollow para transiciones
+        if (vcamThirdPerson != null)
+            thirdPersonOrbital = vcamThirdPerson.GetComponent<CinemachineOrbitalFollow>();
+        if (vcamAim != null)
+            aimOrbital = vcamAim.GetComponent<CinemachineOrbitalFollow>();
     }
     
     void Start()
@@ -238,10 +257,141 @@ public class CinemachineCameraController : MonoBehaviour
     }
     
     /// <summary>
+    /// Entrar en modo de carga de salto (transición progresiva ThirdPerson → Aim)
+    /// </summary>
+    public void EnterChargingMode()
+    {
+        Debug.Log("[CinemachineCamera] EnterChargingMode - starting smooth transition");
+        isCharging = true;
+        
+        // Mantener ThirdPerson activa - vamos a interpolar sus valores
+        SwitchToCamera(vcamThirdPerson);
+        
+        // Cachear valores iniciales de ThirdPerson
+        if (vcamThirdPerson != null)
+        {
+            chargeFOVStart = vcamThirdPerson.Lens.FieldOfView;
+            
+            if (thirdPersonOrbital != null)
+            {
+                chargeFollowOffsetStart = thirdPersonOrbital.TargetOffset;
+                chargeOrbitRadiusStart = thirdPersonOrbital.OrbitStyle == CinemachineOrbitalFollow.OrbitStyles.Sphere 
+                    ? thirdPersonOrbital.Radius 
+                    : 5f; // Default
+            }
+        }
+        
+        // Cachear valores target de Aim
+        if (vcamAim != null)
+        {
+            chargeFOVTarget = vcamAim.Lens.FieldOfView;
+            
+            if (aimOrbital != null)
+            {
+                chargeFollowOffsetTarget = aimOrbital.TargetOffset;
+                chargeOrbitRadiusTarget = aimOrbital.OrbitStyle == CinemachineOrbitalFollow.OrbitStyles.Sphere
+                    ? aimOrbital.Radius
+                    : 3f; // Default más cercano para aim
+            }
+        }
+        else
+        {
+            // Fallback si no hay cámara Aim
+            chargeFOVTarget = aimFOV;
+            chargeFollowOffsetTarget = chargeFollowOffsetStart + new Vector3(0.5f, 0, -1f);
+            chargeOrbitRadiusTarget = chargeOrbitRadiusStart * 0.6f;
+        }
+        
+        Debug.Log($"[CinemachineCamera] Charge transition: FOV {chargeFOVStart} → {chargeFOVTarget}, Radius {chargeOrbitRadiusStart} → {chargeOrbitRadiusTarget}");
+    }
+    
+    /// <summary>
+    /// Salir del modo de carga de salto (cancelar)
+    /// </summary>
+    public void ExitChargingMode()
+    {
+        Debug.Log("[CinemachineCamera] ExitChargingMode - returning to ThirdPerson");
+        isCharging = false;
+        
+        // Restaurar valores originales de ThirdPerson
+        if (vcamThirdPerson != null)
+        {
+            vcamThirdPerson.Lens.FieldOfView = chargeFOVStart;
+            
+            if (thirdPersonOrbital != null)
+            {
+                thirdPersonOrbital.TargetOffset = chargeFollowOffsetStart;
+                if (thirdPersonOrbital.OrbitStyle == CinemachineOrbitalFollow.OrbitStyles.Sphere)
+                    thirdPersonOrbital.Radius = chargeOrbitRadiusStart;
+            }
+        }
+        
+        SwitchToCamera(vcamThirdPerson);
+        currentState = CameraState.Normal;
+    }
+    
+    /// <summary>
+    /// Actualiza el progreso de carga del salto (0-1).
+    /// La cámara transiciona gradualmente de ThirdPerson a Aim basándose en este valor.
+    /// Interpola FOV y posición suavemente.
+    /// </summary>
+    public void SetChargeProgress(float progress)
+    {
+        if (!isCharging || vcamThirdPerson == null) return;
+        
+        progress = Mathf.Clamp01(progress);
+        
+        // Curva de easing para transición más natural
+        float easedProgress = EaseOutQuad(progress);
+        
+        // Interpolar FOV
+        float newFOV = Mathf.Lerp(chargeFOVStart, chargeFOVTarget, easedProgress);
+        vcamThirdPerson.Lens.FieldOfView = newFOV;
+        
+        // Interpolar posición de la cámara (OrbitalFollow)
+        if (thirdPersonOrbital != null)
+        {
+            // Interpolar TargetOffset (shoulder offset)
+            thirdPersonOrbital.TargetOffset = Vector3.Lerp(chargeFollowOffsetStart, chargeFollowOffsetTarget, easedProgress);
+            
+            // Interpolar radio de órbita (distancia a jugador)
+            if (thirdPersonOrbital.OrbitStyle == CinemachineOrbitalFollow.OrbitStyles.Sphere)
+            {
+                thirdPersonOrbital.Radius = Mathf.Lerp(chargeOrbitRadiusStart, chargeOrbitRadiusTarget, easedProgress);
+            }
+        }
+        
+        // Marcar como Aiming cuando está cargando
+        if (progress > 0.1f)
+            currentState = CameraState.Aiming;
+        
+        // Debug.Log($"[CinemachineCamera] SetChargeProgress({progress:F2})");
+    }
+    
+    /// <summary>
     /// Entrar en modo salto
     /// </summary>
     public void EnterJumpMode()
     {
+        // Terminar modo carga si estaba activo
+        if (isCharging)
+        {
+            isCharging = false;
+            
+            // Restaurar valores originales de ThirdPerson para que la próxima vez empiece bien
+            if (vcamThirdPerson != null)
+            {
+                vcamThirdPerson.Lens.FieldOfView = chargeFOVStart;
+                
+                if (thirdPersonOrbital != null)
+                {
+                    thirdPersonOrbital.TargetOffset = chargeFollowOffsetStart;
+                    if (thirdPersonOrbital.OrbitStyle == CinemachineOrbitalFollow.OrbitStyles.Sphere)
+                        thirdPersonOrbital.Radius = chargeOrbitRadiusStart;
+                }
+            }
+        }
+        
         currentState = CameraState.Jumping;
         jumpStartTime = Time.unscaledTime;
         jumpProgress = 0f;
@@ -621,6 +771,22 @@ public class CinemachineCameraController : MonoBehaviour
             vcamJump.Follow = target;
             vcamJump.LookAt = target;
         }
+    }
+    
+    /// <summary>
+    /// Curva de easing para transiciones más naturales (desacelera al final)
+    /// </summary>
+    private float EaseOutQuad(float t)
+    {
+        return 1f - (1f - t) * (1f - t);
+    }
+    
+    /// <summary>
+    /// Curva de easing que acelera al principio y desacelera al final
+    /// </summary>
+    private float EaseInOutQuad(float t)
+    {
+        return t < 0.5f ? 2f * t * t : 1f - Mathf.Pow(-2f * t + 2f, 2f) / 2f;
     }
     
     #endregion
