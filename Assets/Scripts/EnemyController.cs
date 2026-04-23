@@ -12,16 +12,21 @@ public class EnemyController : MonoBehaviour
 {
     [Header("Física")]
     [SerializeField] private float gravity = 20f;
+
+    [Header("Ragdoll")]
+    [SerializeField] private float ragdollForce = 5f;
     
     public bool CanBePossessed => true;
 
     private bool isPossessed = false;
     private InventoryHolder inventory;
+    private HitReactionController hitReactionController;
     private CharacterController characterController;
     private NavMeshAgent navAgent;
     private float verticalVelocity = 0f;
 
     public bool IsPossessed => isPossessed;
+    public bool IsDead => inventory != null && inventory.IsDead;
     public InventoryHolder Inventory => inventory;
     public CharacterController Controller => characterController;
     public NavMeshAgent NavAgent => navAgent;
@@ -31,6 +36,7 @@ public class EnemyController : MonoBehaviour
         inventory = GetComponent<InventoryHolder>();
         characterController = GetComponent<CharacterController>();
         navAgent = GetComponent<NavMeshAgent>();
+        hitReactionController = GetComponent<HitReactionController>();
         
         // Configurar CapsuleCollider como trigger para detectar pickups y otros triggers
         CapsuleCollider triggerCollider = GetComponent<CapsuleCollider>();
@@ -101,8 +107,6 @@ public class EnemyController : MonoBehaviour
         
         // Ocultar modelo para vista en primera persona
         SetModelVisible(false);
-        
-        Debug.Log($"{name} poseído");
     }
 
     public void OnReleased()
@@ -120,6 +124,68 @@ public class EnemyController : MonoBehaviour
         SetModelVisible(true);
         
         Debug.Log($"{name} liberado");
+    }
+
+    /// <summary>
+    /// Aplica daño al enemigo. Si muere, activa el ragdoll con fuerza en el punto de impacto.
+    /// </summary>
+    public void TakeDamage(float damage, Vector3 hitPoint, Vector3 hitDirection)
+    {
+        if (inventory == null || inventory.IsDead) return;
+
+        inventory.TakeDamage(damage);
+
+        if (inventory.IsDead)
+            Die(hitPoint, hitDirection);
+        else
+            hitReactionController?.ReactToHit(hitPoint, hitDirection);
+    }
+
+    private void Die(Vector3 hitPoint, Vector3 hitDirection)
+    {
+        // Detener IA
+        EnemyAI ai = GetComponent<EnemyAI>();
+        if (ai != null) ai.enabled = false;
+
+        // Detener agente y controlador de movimiento
+        if (navAgent != null) { navAgent.isStopped = true; navAgent.enabled = false; }
+        if (characterController != null) characterController.enabled = false;
+
+        // Desactivar animador
+        Animator animator = GetComponentInChildren<Animator>();
+        if (animator != null) animator.enabled = false;
+
+        // Asegurarse de que el modelo es visible
+        SetModelVisible(true);
+
+        // Activar ragdoll: hacer todos los Rigidbody hijos no-cinemáticos
+        Rigidbody[] ragdollBodies = GetComponentsInChildren<Rigidbody>();
+        Rigidbody closestRb = null;
+        float closestDist = float.MaxValue;
+
+        foreach (Rigidbody rb in ragdollBodies)
+        {
+            rb.isKinematic = false;
+            float dist = Vector3.Distance(rb.transform.position, hitPoint);
+            if (dist < closestDist)
+            {
+                closestDist = dist;
+                closestRb = rb;
+            }
+        }
+
+        // Aplicar fuerza de impacto en el hueso más cercano al punto de impacto
+        // Aplicar velocidad a todos los huesos (distribuida) para evitar que salgan volando
+        Vector3 impulseDir = hitDirection.normalized;
+        foreach (Rigidbody rb in ragdollBodies)
+        {
+            float distFactor = 1f / (1f + Vector3.Distance(rb.transform.position, hitPoint));
+            rb.AddForce(impulseDir * ragdollForce * distFactor, ForceMode.VelocityChange);
+        }
+
+        // Fuerza extra en el hueso del impacto
+        if (closestRb != null)
+            closestRb.AddForce(impulseDir * ragdollForce * 0.5f, ForceMode.VelocityChange);
     }
     
     /// <summary>

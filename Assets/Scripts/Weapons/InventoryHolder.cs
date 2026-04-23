@@ -55,7 +55,6 @@ public class InventoryHolder : MonoBehaviour
         {
             CreateWeaponVisual();
             InitializeBulletPool();
-            Debug.Log($"{gameObject.name}: Inicia con {equippedWeapon.weaponType.weaponName} ({equippedWeapon.currentBullets} balas)");
         }
     }
     
@@ -68,9 +67,7 @@ public class InventoryHolder : MonoBehaviour
         
         currentHealth = Mathf.Max(0f, currentHealth - damage);
         OnHealthChanged?.Invoke(currentHealth, maxHealth);
-        
-        Debug.Log($"{gameObject.name}: Recibe {damage} daño. Vida: {currentHealth}/{maxHealth}");
-        
+
         if (IsDead)
         {
             Die();
@@ -90,10 +87,8 @@ public class InventoryHolder : MonoBehaviour
     
     private void Die()
     {
-        Debug.Log($"{gameObject.name}: Muerto");
         OnDeath?.Invoke();
-        
-        // Soltar arma al morir
+
         if (HasWeapon)
         {
             DropWeapon();
@@ -118,17 +113,13 @@ public class InventoryHolder : MonoBehaviour
         {
             CreateWeaponVisual();
             InitializeBulletPool();
-            Debug.Log($"{gameObject.name}: Equipó {equippedWeapon.weaponType.weaponName} con {equippedWeapon.currentBullets} balas");
         }
-        
+
         OnWeaponChanged?.Invoke(equippedWeapon);
-        
+
         return previousWeapon;
     }
-    
-    /// <summary>
-    /// Equipa un arma por tipo con balas iniciales
-    /// </summary>
+
     public WeaponData EquipWeapon(WeaponType type, int bullets)
     {
         return EquipWeapon(new WeaponData(type, bullets));
@@ -187,11 +178,7 @@ public class InventoryHolder : MonoBehaviour
             // Configurar el pickup con las balas actuales
             WeaponPickup pickupScript = pickup.GetComponent<WeaponPickup>();
             if (pickupScript != null)
-            {
                 pickupScript.Initialize(type, bullets);
-            }
-            
-            Debug.Log($"{gameObject.name}: Soltó {type.weaponName} con {bullets} balas");
         }
         
         // Limpiar
@@ -208,23 +195,15 @@ public class InventoryHolder : MonoBehaviour
     public bool TryFire(Vector3 direction)
     {
         if (!HasWeapon)
-        {
-            Debug.Log($"{gameObject.name}: No tiene arma equipada");
             return false;
-        }
-        
+
         WeaponType type = equippedWeapon.weaponType;
-        
-        // Verificar cadencia
+
         if (Time.time < nextFireTime)
             return false;
-        
-        // Verificar munición
+
         if (!equippedWeapon.ConsumeBullet())
-        {
-            Debug.Log($"{gameObject.name}: Sin munición");
             return false;
-        }
         
         nextFireTime = Time.time + type.fireRate;
         
@@ -232,8 +211,6 @@ public class InventoryHolder : MonoBehaviour
         Vector3 origin = weaponAnchor.position + weaponAnchor.TransformDirection(type.equippedPositionOffset + type.muzzleOffset);
         
         SpawnBullet(origin, direction);
-        
-        Debug.Log($"{type.weaponName}: Disparo. Balas restantes: {equippedWeapon.currentBullets}");
         return true;
     }
     
@@ -268,7 +245,7 @@ public class InventoryHolder : MonoBehaviour
         if (bulletScript != null)
         {
             WeaponType type = equippedWeapon.weaponType;
-            bulletScript.Launch(direction, type.bulletSpeed, type.bulletLifetime);
+            bulletScript.Launch(direction, type.bulletSpeed, type.bulletLifetime, type.damage);
         }
     }
     
@@ -326,25 +303,13 @@ public class InventoryHolder : MonoBehaviour
     public bool AddMagazine(WeaponType magazineType)
     {
         if (!HasWeapon)
-        {
-            Debug.Log($"{gameObject.name}: No tiene arma para recargar");
             return false;
-        }
-        
+
         if (equippedWeapon.weaponType != magazineType)
-        {
-            Debug.Log($"{gameObject.name}: Cargador incompatible");
             return false;
-        }
-        
+
         int added = equippedWeapon.AddBullets(magazineType.bulletsPerMagazine);
-        if (added > 0)
-        {
-            Debug.Log($"{gameObject.name}: +{added} balas. Total: {equippedWeapon.currentBullets}");
-            return true;
-        }
-        
-        return false;
+        return added > 0;
     }
     
     void OnDestroy()

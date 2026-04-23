@@ -20,6 +20,9 @@ public class WeaponType : ScriptableObject
     [Header("Disparo")]
     [Tooltip("Segundos entre disparos")]
     public float fireRate = 0.25f;
+
+    [Tooltip("Daño que inflige cada bala")]
+    public float damage = 30f;
     
     [Tooltip("Velocidad de la bala")]
     public float bulletSpeed = 25f;

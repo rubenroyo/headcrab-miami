@@ -446,7 +446,6 @@ public class CinemachineCameraController : MonoBehaviour
         if (impulseSource != null)
         {
             impulseSource.GenerateImpulse(Vector3.down * intensity);
-            Debug.Log($"[CinemachineCamera] TriggerShake intensity={intensity}");
         }
     }
     

@@ -16,7 +16,8 @@ MonoBehaviour:
   bulletsPerMagazine: 12
   maxBullets: 36
   fireRate: 0.2
-  bulletSpeed: 100
+  damage: 30
+  bulletSpeed: 20
   bulletLifetime: 3
   bulletPrefab: {fileID: 5478078452442279726, guid: e5815b4569f4c0744906589582e6d88e, type: 3}
   pickupPrefab: {fileID: 9109955285980595624, guid: cf9e81af56c063846a34ccfb3e033fd2, type: 3}

@@ -216,12 +216,6 @@ public class EnemyAI : MonoBehaviour
             return;
         }
 
-        // DEBUG: Estado actual cada 0.5s
-        if (Time.frameCount % 30 == 0)
-        {
-            Debug.Log($"[STATE] {name}: {CurrentState}, isStopped={navAgent.isStopped}, hasPath={navAgent.hasPath}, remainingDist={navAgent.remainingDistance:F2}");
-        }
-
         // Actualizar detección de visión
         UpdateVision();
         
@@ -295,12 +289,6 @@ public class EnemyAI : MonoBehaviour
         else
         {
             rotationReason = $"NO_ROTATION (hasPath={navAgent.hasPath}, vel={navAgent.velocity.sqrMagnitude:F3})";
-        }
-
-        // Log cada 0.5 segundos para no spammear
-        if (Time.frameCount % 30 == 0)
-        {
-            Debug.Log($"[ROT] {name}: State={CurrentState}, CanSee={CanSeePlayer}, Reason={rotationReason}, Target={lookTarget}");
         }
 
         if (shouldRotate)

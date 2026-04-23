@@ -1,118 +1,84 @@
 using UnityEngine;
 
-/// <summary>
-/// Proyectil disparado por un arma.
-/// Se mueve en línea recta y se desactiva al colisionar o expirar.
-/// </summary>
 public class Bullet : MonoBehaviour
 {
     private float speed;
     private float lifetime;
     private float spawnTime;
+    private float damage = 30f;
     private bool isLaunched = false;
-    
+    private Vector3 previousPosition;
+
     private int wallLayer;
     private int enemyLayer;
-    
+
     void Awake()
     {
         wallLayer = LayerMask.NameToLayer("Wall");
         enemyLayer = LayerMask.NameToLayer("Enemy");
-        
-        // Asegurar que tiene Rigidbody para detección de colisiones
-        Rigidbody rb = GetComponent<Rigidbody>();
-        if (rb == null)
-        {
-            rb = gameObject.AddComponent<Rigidbody>();
-            rb.useGravity = false;
-            rb.isKinematic = true;
-        }
     }
-    
+
     void OnEnable()
     {
         spawnTime = Time.time;
         isLaunched = false;
     }
-    
-    void Update()
-    {
-        if (!isLaunched) return;
-        
-        // Mover hacia adelante
-        transform.position += transform.forward * speed * Time.deltaTime;
-        
-        // Desactivar por tiempo
-        if (Time.time - spawnTime >= lifetime)
-        {
-            Deactivate();
-        }
-    }
-    
-    /// <summary>
-    /// Lanza la bala en una dirección
-    /// </summary>
-    public void Launch(Vector3 direction, float bulletSpeed, float bulletLifetime)
+
+    public void Launch(Vector3 direction, float bulletSpeed, float bulletLifetime, float bulletDamage = 30f)
     {
         transform.forward = direction.normalized;
         speed = bulletSpeed;
         lifetime = bulletLifetime;
+        damage = bulletDamage;
         spawnTime = Time.time;
+        previousPosition = transform.position;
         isLaunched = true;
     }
-    
-    private void OnTriggerEnter(Collider other)
+
+    void Update()
     {
-        int otherLayer = other.gameObject.layer;
-        
-        // Impacto con pared
-        if (otherLayer == wallLayer)
+        if (!isLaunched) return;
+
+        if (Time.time - spawnTime >= lifetime)
         {
-            // Crear agujero de bala
-            SpawnBulletHole(other);
             Deactivate();
             return;
         }
-        
-        // Impacto con enemigo (solo si no está poseído)
-        if (otherLayer == enemyLayer)
+
+        float stepDistance = speed * Time.deltaTime;
+        if (Physics.Raycast(previousPosition, transform.forward, out RaycastHit hit, stepDistance + 0.05f, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore))
         {
-            EnemyController enemy = other.GetComponent<EnemyController>();
-            if (enemy != null && !enemy.IsPossessed)
-            {
-                // TODO: Aplicar daño al enemigo
-                // enemy.TakeDamage(damage);
-                Debug.Log($"Bala impactó en {enemy.name}");
-                Deactivate();
-                return;
-            }
+            HandleHit(hit);
+            return;
         }
+
+        transform.position += transform.forward * stepDistance;
+        previousPosition = transform.position;
     }
-    
-    private void SpawnBulletHole(Collider hitCollider)
+
+    private void HandleHit(RaycastHit hit)
     {
-        if (BulletHoleManager.Instance == null) return;
-        
-        // Hacer raycast para obtener el punto exacto y la normal
-        Vector3 rayOrigin = transform.position - transform.forward * 0.5f;
-        Vector3 rayDirection = transform.forward;
-        
-        RaycastHit hit;
-        if (Physics.Raycast(rayOrigin, rayDirection, out hit, 2f, 1 << wallLayer))
+        transform.position = hit.point;
+
+        EnemyController enemy = hit.collider.GetComponentInParent<EnemyController>();
+        if (enemy != null && !enemy.IsPossessed && !enemy.IsDead)
         {
-            BulletHoleManager.Instance.SpawnBulletHole(hit.point, hit.normal);
+            enemy.TakeDamage(damage, hit.point, transform.forward);
         }
-        else
+        else if (hit.collider.gameObject.layer == wallLayer)
         {
-            // Fallback: usar posición de la bala y normal aproximada
-            Vector3 closestPoint = hitCollider.ClosestPoint(transform.position);
-            Vector3 normal = (transform.position - closestPoint).normalized;
-            if (normal == Vector3.zero) normal = -transform.forward;
-            
-            BulletHoleManager.Instance.SpawnBulletHole(closestPoint, normal);
+            SpawnBulletHole(hit.point, hit.normal);
         }
+
+        Deactivate();
     }
-    
+
+    private void SpawnBulletHole(Vector3 point, Vector3 normal)
+    {
+        if (BulletHoleManager.Instance != null)
+            BulletHoleManager.Instance.SpawnBulletHole(point, normal);
+    }
+
     private void Deactivate()
     {
         isLaunched = false;
