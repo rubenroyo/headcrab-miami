@@ -138,17 +138,16 @@ public class PlayerController : MonoBehaviour
     [Header("Posesión")]
     [SerializeField] private float possessionCooldown = 0.5f;
     [SerializeField] private float possessionRange = 3f;
-    [SerializeField] private float possessedEnemyMoveSpeed = 4f;
 
     [Header("Sprint (posesión)")]
-    [SerializeField] private float sprintSpeedMultiplier = 1.6f;
     [SerializeField] private float sprintFOV = 100f;
     [SerializeField] private float normalPossessionFOV = 90f;
     [SerializeField] private float fovTransitionSpeed = 8f;
 
     [Header("ADS (posesión)")]
     [SerializeField] private float aimFOV = 70f;
-    [SerializeField] private float aimSpeedMultiplier = 0.5f;
+
+    private EnemyCombatActions possessedCombatActions;
 
     // ─────────────────────────────────────────────
     //  ESTADO GENERAL
@@ -163,11 +162,13 @@ public class PlayerController : MonoBehaviour
 
     private SettingsController settingsController;
 
-    public float MoveSpeed { get => moveSpeed; set => moveSpeed = value; }
+    public float MoveSpeed           { get => moveSpeed; set => moveSpeed = value; }
     public EnemyController PossessedEnemy => possessedEnemy;
-    public float CurrentHorizontalSpeed => new Vector3(currentVelocity.x, 0f, currentVelocity.z).magnitude;
-    public bool IsGrounded => characterController.isGrounded;
-    public bool IsCrouching => CurrentState == PlayerState.Crouching;
+    public float CurrentHorizontalSpeed   => new Vector3(currentVelocity.x, 0f, currentVelocity.z).magnitude;
+    public bool  IsGrounded               => characterController.isGrounded;
+    public bool  IsCrouching              => CurrentState == PlayerState.Crouching;
+    public float VerticalVelocity         => verticalVelocity;
+    public float AirRollDuration          => airRollDuration;
 
     // ─────────────────────────────────────────────
     //  INIT
@@ -216,6 +217,16 @@ public class PlayerController : MonoBehaviour
             Cursor.visible = false;
         }
 
+        if ((CurrentState == PlayerState.Normal || CurrentState == PlayerState.Crouching)
+            && (Input.GetKeyDown(KeyCode.LeftShift) || Input.GetKeyDown(KeyCode.RightShift)))
+        {
+            EnterCrouch();
+        }
+        if (CurrentState == PlayerState.Crouching && (Input.GetKeyUp(KeyCode.LeftShift) || Input.GetKeyUp(KeyCode.RightShift)))
+        {
+            ExitCrouch();
+        }
+
         switch (CurrentState)
         {
             case PlayerState.Normal:          UpdateNormal();          break;
@@ -241,9 +252,6 @@ public class PlayerController : MonoBehaviour
         UpdateCoyoteAndBuffer();
         HandleJumpInput();
 
-        if (Input.GetKeyDown(KeyCode.LeftShift) || Input.GetKeyDown(KeyCode.RightShift))
-            EnterCrouch();
-
         if (Input.GetKeyDown(KeyCode.E))
             TryPossessNearbyEnemy();
     }
@@ -264,9 +272,6 @@ public class PlayerController : MonoBehaviour
             else
                 PerformBackflip();
         }
-
-        if (Input.GetKeyUp(KeyCode.LeftShift) || Input.GetKeyUp(KeyCode.RightShift))
-            ExitCrouch();
     }
 
     // ─────────────────────────────────────────────
@@ -323,24 +328,25 @@ public class PlayerController : MonoBehaviour
         airRollTimer = airRollDuration;
         airRollDiveDirection = Vector3.zero;
 
-        // Personaje suspendido: congelar toda la física
         verticalVelocity = 0f;
         currentVelocity = Vector3.zero;
+
+        if (playerAnimatorController == null)
+            playerAnimatorController = GetComponent<PlayerAnimatorController>();
+        if (playerAnimatorController != null)
+            playerAnimatorController.TriggerAirRoll();
 
         Debug.Log("[Player] AirRoll start");
     }
 
     void UpdateAirRoll()
     {
-        // Sin gravedad ni movimiento — el personaje flota 1 segundo
         airRollTimer -= Time.deltaTime;
 
-        // Capturar dirección de input continuamente para el dive
         Vector3 inputDir = GetCameraRelativeInput();
         if (inputDir.sqrMagnitude > 0.01f)
             airRollDiveDirection = inputDir.normalized;
 
-        // Space → Dive en la dirección de input (o forward si no hay input)
         if (Input.GetKeyDown(KeyCode.Space))
         {
             if (airRollDiveDirection.sqrMagnitude < 0.01f)
@@ -350,7 +356,6 @@ public class PlayerController : MonoBehaviour
             return;
         }
 
-        // Tiempo agotado sin Space → Ground Pound
         if (airRollTimer <= 0f)
             PerformGroundPound();
     }
@@ -366,12 +371,17 @@ public class PlayerController : MonoBehaviour
         isJumpCut = false;
         CurrentState = PlayerState.Dive;
         transform.rotation = Quaternion.LookRotation(direction);
+
+        if (playerAnimatorController == null)
+            playerAnimatorController = GetComponent<PlayerAnimatorController>();
+        if (playerAnimatorController != null)
+            playerAnimatorController.TriggerDive();
+
         Debug.Log($"[Player] Dive! dir={direction}");
     }
 
     void UpdateDive()
     {
-        // Arco muy bajo: gravedad agresiva, sin control
         verticalVelocity -= diveGravity * Time.deltaTime;
         verticalVelocity = Mathf.Max(verticalVelocity, -maxFallSpeed);
 
@@ -381,7 +391,6 @@ public class PlayerController : MonoBehaviour
         move.y = verticalVelocity;
         characterController.Move(move * Time.deltaTime);
 
-        // Aterriza con inercia, sin stun
         if (characterController.isGrounded && verticalVelocity <= 0f)
             LandOnGround();
     }
@@ -400,9 +409,7 @@ public class PlayerController : MonoBehaviour
 
     void UpdateGroundPound()
     {
-        // Caída recta a velocidad constante
         verticalVelocity = -groundPoundSpeed;
-
         characterController.Move(Vector3.down * groundPoundSpeed * Time.deltaTime);
 
         if (characterController.isGrounded)
@@ -416,18 +423,21 @@ public class PlayerController : MonoBehaviour
         currentVelocity = Vector3.zero;
         verticalVelocity = -2f;
 
-        // Shake más intenso que un aterrizaje normal
         if (cinemachineCamera != null)
             cinemachineCamera.TriggerLandingShake();
         else if (thirdPersonCamera != null)
             thirdPersonCamera.TriggerLandingShake();
+
+        if (playerAnimatorController == null)
+            playerAnimatorController = GetComponent<PlayerAnimatorController>();
+        if (playerAnimatorController != null)
+            playerAnimatorController.TriggerGroundPoundSmoke();
 
         Debug.Log("[Player] GroundPound landed — stun");
     }
 
     void UpdateGroundPoundLand()
     {
-        // Pegado al suelo sin moverse
         characterController.Move(Vector3.down * 2f * Time.deltaTime);
 
         groundPoundLandTimer -= Time.deltaTime;
@@ -493,6 +503,12 @@ public class PlayerController : MonoBehaviour
         isJumpCut = false;
         CurrentState = PlayerState.LongJump;
         transform.rotation = Quaternion.LookRotation(longJumpDirection);
+
+        if (playerAnimatorController == null)
+            playerAnimatorController = GetComponent<PlayerAnimatorController>();
+        if (playerAnimatorController != null)
+            playerAnimatorController.TriggerLongJump();
+
         Debug.Log($"[Player] LongJump! dir={longJumpDirection}");
     }
 
@@ -570,12 +586,22 @@ public class PlayerController : MonoBehaviour
         wasGroundedLastFrame = grounded;
     }
 
+    // Referencia cacheada al AnimatorController para no buscarlo en cada llamada
+    private PlayerAnimatorController playerAnimatorController;
+
     void PerformJump(float force)
     {
         verticalVelocity = force;
         coyoteTimer = 0f;
         isJumpCut = false;
         CurrentState = PlayerState.Jumping;
+
+        // Notificar al AnimatorController para disparar el trigger
+        if (playerAnimatorController == null)
+            playerAnimatorController = GetComponent<PlayerAnimatorController>();
+        if (playerAnimatorController != null)
+            playerAnimatorController.TriggerJump();
+
         Debug.Log($"[Player] Jump! force={force}");
     }
 
@@ -597,6 +623,11 @@ public class PlayerController : MonoBehaviour
 
         if (cameraFollow != null)
             cameraFollow.SetJumping(false, 0f);
+
+        if (playerAnimatorController == null)
+            playerAnimatorController = GetComponent<PlayerAnimatorController>();
+        if (playerAnimatorController != null)
+            playerAnimatorController.TriggerFallSmoke();
 
         Debug.Log("[Player] Landed.");
     }
@@ -731,7 +762,7 @@ public class PlayerController : MonoBehaviour
     void PossessEnemy(EnemyController enemy)
     {
         verticalVelocity = 0f;
-        currentVelocity = Vector3.zero;
+        currentVelocity  = Vector3.zero;
 
         if (characterController != null)
             characterController.enabled = true;
@@ -739,9 +770,11 @@ public class PlayerController : MonoBehaviour
         if (cameraFollow != null)
             cameraFollow.SetJumping(false, 0f);
 
-        CurrentState = PlayerState.Possessing;
+        CurrentState  = PlayerState.Possessing;
         possessedEnemy = enemy;
         possessedEnemy.OnPossessed();
+
+        possessedCombatActions = enemy.GetComponent<EnemyCombatActions>(); // (+)
 
         transform.position = new Vector3(enemy.transform.position.x, 1.625f, enemy.transform.position.z);
 
@@ -779,6 +812,8 @@ public class PlayerController : MonoBehaviour
             possessedEnemy.OnReleased();
             possessedEnemy = null;
         }
+
+        possessedCombatActions = null; // (+)
         isSprinting = false;
     }
 
@@ -805,35 +840,57 @@ public class PlayerController : MonoBehaviour
 
     void UpdatePossessing()
     {
-        if (possessedEnemy == null) { CurrentState = PlayerState.Normal; return; }
+        if (possessedEnemy == null || possessedCombatActions == null)
+        {
+            CurrentState = PlayerState.Normal;
+            return;
+        }
 
-        if (Input.GetKeyDown(KeyCode.E)) { ReleaseEnemy(); return; }
+        EnemyStats stats = possessedEnemy.Stats;
 
         isSprinting = (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift)) && !isAimingADS;
         isAimingADS = Input.GetMouseButton(1) && !isSprinting;
 
+        // Sincroniza ADS con EnemyLocomotion a través de EnemyCombatActions
+        possessedCombatActions.SetAiming(isAimingADS);
+
         if (cinemachineCamera != null)
             cinemachineCamera.SetADSState(isAimingADS);
 
-        bool isMovingNow = cinemachineCamera != null &&
-                           cinemachineCamera.FirstPersonController != null &&
-                           cinemachineCamera.FirstPersonController.GetMovementDirection().sqrMagnitude > 0.01f;
-        if (CrosshairController.Instance != null)
-            CrosshairController.Instance.UpdateState(isAimingADS, isMovingNow, isSprinting);
+        // Crosshair: lee la dispersión desde EnemyLocomotion (fuente única)
+        if (CrosshairController.Instance != null && possessedEnemy.Inventory.HasWeapon)
+        {
+            float tremor     = stats != null ? stats.handTremor : 0f;
+            WeaponState wState = possessedCombatActions.LocomotionState switch
+            {
+                EnemyLocomotionState.Running => WeaponState.Sprinting,
+                EnemyLocomotionState.Walking => WeaponState.Moving,
+                EnemyLocomotionState.Aiming  => WeaponState.Aiming,
+                _                            => WeaponState.Idle
+            };
+            float dispersion = possessedEnemy.Inventory.EquippedWeapon.weaponType
+                                .GetDispersion(wState, tremor);
+            CrosshairController.Instance.SetDispersion(dispersion);
+        }
 
-        if (Input.GetMouseButtonDown(0))
+        bool fireInput = possessedEnemy.Inventory.HasWeapon &&
+                         possessedEnemy.Inventory.EquippedWeapon.weaponType.isAutomatic
+                             ? Input.GetMouseButton(0)
+                             : Input.GetMouseButtonDown(0);
+
+        if (fireInput)
             TryFirePossessedWeapon();
 
         UpdateSprintFOV();
-        HandlePossessedMovement();
+        HandlePossessedMovement(stats);
 
         Vector3 enemyPos = possessedEnemy.transform.position;
         transform.position = new Vector3(enemyPos.x, 1.625f, enemyPos.z);
     }
 
-    void HandlePossessedMovement()
+    void HandlePossessedMovement(EnemyStats stats)
     {
-        if (possessedEnemy == null) return;
+        if (possessedEnemy == null || possessedCombatActions == null) return;
 
         Vector3 moveDirection;
         if (cinemachineCamera != null &&
@@ -849,69 +906,42 @@ public class PlayerController : MonoBehaviour
             moveDirection = new Vector3(h, 0f, v).normalized;
         }
 
-        float currentSpeed = possessedEnemyMoveSpeed;
-        if (isAimingADS)      currentSpeed *= aimSpeedMultiplier;
-        else if (isSprinting) currentSpeed *= sprintSpeedMultiplier;
+        bool hasInput = moveDirection.sqrMagnitude > 0.01f;
 
         if (cinemachineCamera != null)
-            cinemachineCamera.UpdateFPSWeaponMovement(moveDirection.sqrMagnitude > 0.01f, isSprinting);
+            cinemachineCamera.UpdateFPSWeaponMovement(hasInput, isSprinting);
 
-        possessedEnemy.Move(moveDirection * currentSpeed * Time.deltaTime);
+        if (!hasInput)
+            possessedCombatActions.StopMoving();
+        else if (isSprinting && !isAimingADS)
+            possessedCombatActions.Run(moveDirection);
+        else
+            possessedCombatActions.Walk(moveDirection);   // sin aimMult
     }
 
     void TryFirePossessedWeapon()
     {
-        if (possessedEnemy == null) return;
-        InventoryHolder inventory = possessedEnemy.GetComponent<InventoryHolder>();
+        if (possessedEnemy == null || possessedCombatActions == null) return;
+        InventoryHolder inventory = possessedEnemy.Inventory;
         if (inventory == null || !inventory.HasWeapon) return;
 
-        Vector3 direction;
+        EnemyStats stats = possessedEnemy.Stats;
+        float tremor = stats != null ? stats.handTremor : 0f;
 
-        if (cinemachineCamera != null &&
-            cinemachineCamera.FirstPersonController != null &&
-            cinemachineCamera.FirstPersonController.IsActive)
-        {
-            Camera cam = Camera.main;
-            if (cam != null)
-            {
-                Ray ray = cam.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0f));
-                RaycastHit hit;
-                Vector3 aimPoint = Physics.Raycast(ray, out hit, 1000f) ? hit.point : ray.GetPoint(100f);
-                direction = (aimPoint - inventory.GetMuzzlePosition()).normalized;
-            }
-            else
-            {
-                direction = cinemachineCamera.FirstPersonController.GetAimDirection();
-            }
-            direction = ApplyDispersion(direction);
-        }
-        else
-        {
-            Vector3 mouseWorld = settingsController.GetMouseWorldPosition(mainCamera, Input.mousePosition);
-            direction = (mouseWorld - possessedEnemy.transform.position).normalized;
-            direction.y = 0f;
-        }
+        Camera shooterCam = mainCamera != null ? mainCamera : Camera.main;
+        bool fired = possessedCombatActions.FireWithCamera(shooterCam, tremor);
 
-        bool fired = inventory.TryFire(direction);
         if (fired && cinemachineCamera != null)
         {
             cinemachineCamera.TriggerWeaponRecoil();
+
             float shakeIntensity = inventory.EquippedWeapon.weaponType.fireShakeIntensity;
             if (shakeIntensity > 0f)
                 cinemachineCamera.TriggerShake(shakeIntensity);
+
+            CrosshairController.Instance?.AddRecoilDispersion(
+                inventory.EquippedWeapon.weaponType.baseDispersion * 0.5f);
         }
-    }
-
-    private Vector3 ApplyDispersion(Vector3 direction)
-    {
-        if (CrosshairController.Instance == null) return direction;
-        float angle = CrosshairController.Instance.CurrentDispersion;
-        if (angle <= 0f) return direction;
-
-        return Quaternion.Euler(
-            Random.Range(-angle, angle),
-            Random.Range(-angle, angle),
-            0f) * direction;
     }
 
     void StartDismount()
@@ -944,5 +974,17 @@ public class PlayerController : MonoBehaviour
     {
         foreach (var r in GetComponentsInChildren<Renderer>())
             r.enabled = visible;
+    }
+
+    private WeaponState CalculateWeaponState()
+    {
+        if (isAimingADS)  return WeaponState.Aiming;
+        if (isSprinting)  return WeaponState.Sprinting;
+
+        bool isMoving = cinemachineCamera != null &&
+                        cinemachineCamera.FirstPersonController != null &&
+                        cinemachineCamera.FirstPersonController.GetMovementDirection().sqrMagnitude > 0.01f;
+
+        return isMoving ? WeaponState.Moving : WeaponState.Idle;
     }
 }

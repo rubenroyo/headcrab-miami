@@ -3,8 +3,8 @@ using UnityEngine.UI;
 
 /// <summary>
 /// Crosshair dinámico que muestra la dispersión actual del arma.
-/// Consiste en 4 líneas (arriba, abajo, izquierda, derecha) que se separan
-/// según el valor de dispersión actual.
+/// La dispersión real la calcula WeaponType.GetDispersion() — el crosshair
+/// solo la recibe y la visualiza, para que siempre sea coherente con el disparo.
 /// </summary>
 public class CrosshairController : MonoBehaviour
 {
@@ -14,170 +14,117 @@ public class CrosshairController : MonoBehaviour
     [SerializeField] private Image lineBottom;
     [SerializeField] private Image lineLeft;
     [SerializeField] private Image lineRight;
-    
+
     [Header("Apariencia")]
     [SerializeField] private float lineWidth = 2f;
     [SerializeField] private float lineLength = 10f;
-    [SerializeField] private float minGap = 5f;      // Gap mínimo entre líneas (dispersión 0)
-    [SerializeField] private float gapMultiplier = 100f; // Multiplicador para convertir dispersión a píxeles
+    [SerializeField] private float minGap = 5f;
+    [SerializeField] private float gapMultiplier = 100f;
     [SerializeField] private Color crosshairColor = Color.white;
-    
+
     [Header("Transición")]
     [SerializeField] private float transitionSpeed = 10f;
-    
-    [Header("Dispersión por Estado")]
-    [Tooltip("Dispersión al apuntar quieto (grados)")]
-    [SerializeField] private float dispersionAimIdle = 0.5f;
-    [Tooltip("Dispersión al apuntar andando (grados)")]
-    [SerializeField] private float dispersionAimWalking = 1.5f;
-    [Tooltip("Dispersión sin apuntar quieto (grados)")]
-    [SerializeField] private float dispersionHipIdle = 3f;
-    [Tooltip("Dispersión sin apuntar andando (grados)")]
-    [SerializeField] private float dispersionHipWalking = 5f;
-    [Tooltip("Dispersión sin apuntar corriendo (grados)")]
-    [SerializeField] private float dispersionHipSprinting = 10f;
-    
-    // Estado actual
+
+    // Dispersión actual (en grados) — la muestra el crosshair
     private float currentDispersion = 0f;
     private float targetDispersion = 0f;
     private bool isVisible = false;
-    
-    // Estado de movimiento (recibido de PlayerController)
-    private bool isAiming = false;
-    private bool isMoving = false;
-    private bool isSprinting = false;
-    
+
+    private Camera mainCamera;
+
     public static CrosshairController Instance { get; private set; }
-    
-    // Propiedades públicas para leer/modificar dispersión
-    public float DispersionAimIdle { get => dispersionAimIdle; set => dispersionAimIdle = value; }
-    public float DispersionAimWalking { get => dispersionAimWalking; set => dispersionAimWalking = value; }
-    public float DispersionHipIdle { get => dispersionHipIdle; set => dispersionHipIdle = value; }
-    public float DispersionHipWalking { get => dispersionHipWalking; set => dispersionHipWalking = value; }
-    public float DispersionHipSprinting { get => dispersionHipSprinting; set => dispersionHipSprinting = value; }
-    
+
     /// <summary>
-    /// Obtiene la dispersión actual en grados (para usar al disparar)
+    /// Dispersión actual en grados.
+    /// Nota: este valor es SOLO visual. La dispersión real del disparo
+    /// la calcula WeaponType.GetDispersion() en InventoryHolder.TryFire().
     /// </summary>
     public float CurrentDispersion => currentDispersion;
-    
+
     void Awake()
     {
         if (Instance == null)
-        {
             Instance = this;
-        }
         else
         {
             Destroy(gameObject);
             return;
         }
-        
-        // Crear líneas si no están asignadas
+
         if (crosshairContainer == null)
-        {
             CreateCrosshairUI();
-        }
-        
+
         SetVisible(false);
+        mainCamera = Camera.main;
     }
-    
+
     void Update()
     {
         if (!isVisible) return;
-        
-        // Calcular dispersión objetivo según estado
-        targetDispersion = CalculateDispersion();
-        
-        // Transición suave
-        currentDispersion = Mathf.Lerp(currentDispersion, targetDispersion, Time.deltaTime * transitionSpeed);
-        
-        // Actualizar posición de las líneas
+
+        currentDispersion = Mathf.Lerp(currentDispersion, targetDispersion,
+            Time.deltaTime * transitionSpeed);
+
         UpdateCrosshairSize();
     }
-    
+
     /// <summary>
-    /// Calcula la dispersión según el estado actual
+    /// Actualiza la dispersión visual del crosshair.
+    /// Llamar desde PlayerController cada frame durante la posesión,
+    /// pasando el resultado de weaponType.GetDispersion(state, handTremor).
     /// </summary>
-    private float CalculateDispersion()
+    public void SetDispersion(float dispersionDegrees)
     {
-        if (isAiming)
-        {
-            // Apuntando (ADS)
-            return isMoving ? dispersionAimWalking : dispersionAimIdle;
-        }
-        else
-        {
-            // Sin apuntar (hip fire)
-            if (isSprinting)
-                return dispersionHipSprinting;
-            else if (isMoving)
-                return dispersionHipWalking;
-            else
-                return dispersionHipIdle;
-        }
+        targetDispersion = dispersionDegrees;
     }
-    
-    /// <summary>
-    /// Actualiza el estado de movimiento (llamar desde PlayerController)
-    /// </summary>
-    public void UpdateState(bool aiming, bool moving, bool sprinting)
-    {
-        isAiming = aiming;
-        isMoving = moving;
-        isSprinting = sprinting;
-    }
-    
-    /// <summary>
-    /// Muestra u oculta el crosshair
-    /// </summary>
+
     public void SetVisible(bool visible)
     {
         isVisible = visible;
         if (crosshairContainer != null)
-        {
             crosshairContainer.gameObject.SetActive(visible);
-        }
     }
-    
+
     /// <summary>
-    /// Añade dispersión temporal (por disparo, por ejemplo)
+    /// Añade dispersión temporal por recoil (visual únicamente).
     /// </summary>
     public void AddRecoilDispersion(float amount)
     {
         currentDispersion += amount;
     }
-    
+
     private void UpdateCrosshairSize()
     {
-        // Convertir dispersión (grados) a píxeles de gap
-        float gap = minGap + currentDispersion * gapMultiplier;
-        
-        // Posicionar las líneas
+        float gap = CalculateScreenRadius(currentDispersion);
+
         if (lineTop != null)
-        {
-            lineTop.rectTransform.anchoredPosition = new Vector2(0, gap + lineLength / 2);
-        }
+            lineTop.rectTransform.anchoredPosition    = new Vector2(0,    gap + lineLength / 2f);
         if (lineBottom != null)
-        {
-            lineBottom.rectTransform.anchoredPosition = new Vector2(0, -(gap + lineLength / 2));
-        }
+            lineBottom.rectTransform.anchoredPosition = new Vector2(0,  -(gap + lineLength / 2f));
         if (lineLeft != null)
-        {
-            lineLeft.rectTransform.anchoredPosition = new Vector2(-(gap + lineLength / 2), 0);
-        }
+            lineLeft.rectTransform.anchoredPosition   = new Vector2(-(gap + lineLength / 2f), 0);
         if (lineRight != null)
-        {
-            lineRight.rectTransform.anchoredPosition = new Vector2(gap + lineLength / 2, 0);
-        }
+            lineRight.rectTransform.anchoredPosition  = new Vector2( (gap + lineLength / 2f), 0);
     }
-    
-    /// <summary>
-    /// Crea el UI del crosshair programáticamente
-    /// </summary>
+
+    private float CalculateScreenRadius(float dispersionDegrees)
+    {
+        if (mainCamera == null) mainCamera = Camera.main;
+        if (mainCamera == null) return minGap;
+
+        // Convertir dispersión angular a radio en píxeles
+        float halfFOVRad      = mainCamera.fieldOfView * 0.5f * Mathf.Deg2Rad;
+        float dispersionRad   = dispersionDegrees * Mathf.Deg2Rad;
+        float screenHalfHeight = Screen.height * 0.5f * 0.5f;
+
+        float radiusPixels = Mathf.Tan(dispersionRad) / Mathf.Tan(halfFOVRad) * screenHalfHeight;
+
+        // minGap garantiza que nunca sea cero aunque la dispersión sea 0
+        return Mathf.Max(minGap, radiusPixels);
+    }
+
     private void CreateCrosshairUI()
     {
-        // Buscar o crear Canvas
         Canvas canvas = FindFirstObjectByType<Canvas>();
         if (canvas == null)
         {
@@ -188,8 +135,7 @@ public class CrosshairController : MonoBehaviour
             canvasObj.AddComponent<CanvasScaler>();
             canvasObj.AddComponent<GraphicRaycaster>();
         }
-        
-        // Crear contenedor
+
         GameObject container = new GameObject("Crosshair");
         container.transform.SetParent(canvas.transform, false);
         crosshairContainer = container.AddComponent<RectTransform>();
@@ -197,51 +143,38 @@ public class CrosshairController : MonoBehaviour
         crosshairContainer.anchorMax = new Vector2(0.5f, 0.5f);
         crosshairContainer.anchoredPosition = Vector2.zero;
         crosshairContainer.sizeDelta = new Vector2(200, 200);
-        
-        // Crear las 4 líneas
-        lineTop = CreateLine("LineTop", true);
+
+        lineTop    = CreateLine("LineTop",    true);
         lineBottom = CreateLine("LineBottom", true);
-        lineLeft = CreateLine("LineLeft", false);
-        lineRight = CreateLine("LineRight", false);
-        
-        // Aplicar color inicial
+        lineLeft   = CreateLine("LineLeft",   false);
+        lineRight  = CreateLine("LineRight",  false);
+
         SetColor(crosshairColor);
     }
-    
-    private Image CreateLine(string name, bool vertical)
+
+    private Image CreateLine(string lineName, bool vertical)
     {
-        GameObject lineObj = new GameObject(name);
+        GameObject lineObj = new GameObject(lineName);
         lineObj.transform.SetParent(crosshairContainer, false);
-        
+
         RectTransform rect = lineObj.AddComponent<RectTransform>();
         rect.anchorMin = new Vector2(0.5f, 0.5f);
         rect.anchorMax = new Vector2(0.5f, 0.5f);
-        
-        // Tamaño de la línea
-        if (vertical)
-        {
-            rect.sizeDelta = new Vector2(lineWidth, lineLength);
-        }
-        else
-        {
-            rect.sizeDelta = new Vector2(lineLength, lineWidth);
-        }
-        
+        rect.sizeDelta = vertical
+            ? new Vector2(lineWidth, lineLength)
+            : new Vector2(lineLength, lineWidth);
+
         Image img = lineObj.AddComponent<Image>();
         img.color = crosshairColor;
-        
         return img;
     }
-    
-    /// <summary>
-    /// Cambia el color del crosshair
-    /// </summary>
+
     public void SetColor(Color color)
     {
         crosshairColor = color;
-        if (lineTop != null) lineTop.color = color;
+        if (lineTop != null)    lineTop.color    = color;
         if (lineBottom != null) lineBottom.color = color;
-        if (lineLeft != null) lineLeft.color = color;
-        if (lineRight != null) lineRight.color = color;
+        if (lineLeft != null)   lineLeft.color   = color;
+        if (lineRight != null)  lineRight.color  = color;
     }
 }

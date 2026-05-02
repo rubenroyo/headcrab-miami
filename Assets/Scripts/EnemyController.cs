@@ -10,12 +10,21 @@ using UnityEngine.AI;
 [RequireComponent(typeof(CapsuleCollider))]
 public class EnemyController : MonoBehaviour
 {
+    [Header("Stats del Enemigo")]
+    [Tooltip("ScriptableObject con velocidades, precisión y características del tipo de enemigo.")]
+    [SerializeField] private EnemyStats stats;
+
     [Header("Física")]
     [SerializeField] private float gravity = 20f;
 
     [Header("Ragdoll")]
     [SerializeField] private float ragdollForce = 5f;
-    
+
+    [Header("Disparo")]
+    [SerializeField] private Transform muzzlePoint;
+
+    public Transform MuzzlePoint => muzzlePoint;
+
     public bool CanBePossessed => true;
 
     private bool isPossessed = false;
@@ -31,19 +40,28 @@ public class EnemyController : MonoBehaviour
     public CharacterController Controller => characterController;
     public NavMeshAgent NavAgent => navAgent;
 
+    /// <summary>
+    /// Stats del tipo de enemigo. Nunca null si el prefab está bien configurado.
+    /// PlayerController y EnemyAI deben leer speeds desde aquí.
+    /// </summary>
+    public EnemyStats Stats => stats;
+
     void Awake()
     {
         inventory = GetComponent<InventoryHolder>();
         characterController = GetComponent<CharacterController>();
         navAgent = GetComponent<NavMeshAgent>();
         hitReactionController = GetComponent<HitReactionController>();
-        
-        // Configurar CapsuleCollider como trigger para detectar pickups y otros triggers
+
+        if (stats == null)
+            Debug.LogWarning($"[{name}] EnemyController: no tiene EnemyStats asignado. " +
+                             "Asigna un EnemyStats ScriptableObject en el Inspector.");
+
+        // Configurar CapsuleCollider como trigger para pickups
         CapsuleCollider triggerCollider = GetComponent<CapsuleCollider>();
         if (triggerCollider != null)
         {
             triggerCollider.isTrigger = true;
-            // Ajustar para que coincida con el CharacterController
             triggerCollider.center = characterController.center;
             triggerCollider.radius = characterController.radius;
             triggerCollider.height = characterController.height;
@@ -52,44 +70,32 @@ public class EnemyController : MonoBehaviour
 
     void Update()
     {
-        // Si tiene NavMeshAgent activo (IA controlando), no aplicar gravedad manual
-        // El NavMeshAgent ya maneja el movimiento y la gravedad
+        // Si el NavMeshAgent está activo (IA controlando), él gestiona el movimiento
         if (navAgent != null && navAgent.enabled && !isPossessed)
-        {
             return;
-        }
-        
-        // Aplicar gravedad siempre
+
         UpdateGravity();
-        
-        // Si no está siendo movido por posesión, aplicar gravedad verticalmente
+
         if (!isPossessed)
-        {
             characterController.Move(new Vector3(0f, verticalVelocity * Time.deltaTime, 0f));
-        }
     }
 
     private void UpdateGravity()
     {
         if (characterController == null) return;
-        
+
         if (characterController.isGrounded)
-        {
             verticalVelocity = -2f;
-        }
         else
-        {
             verticalVelocity -= gravity * Time.deltaTime;
-        }
     }
 
     /// <summary>
-    /// Mueve al enemigo respetando colisiones (incluye gravedad calculada en Update).
+    /// Mueve al enemigo respetando colisiones (gravedad gestionada en Update).
     /// </summary>
     public void Move(Vector3 motion)
     {
         if (characterController == null) return;
-        
         motion.y = verticalVelocity * Time.deltaTime;
         characterController.Move(motion);
     }
@@ -97,37 +103,31 @@ public class EnemyController : MonoBehaviour
     public void OnPossessed()
     {
         isPossessed = true;
-        
-        // Desactivar NavMeshAgent cuando está poseído
+
         if (navAgent != null)
         {
             navAgent.isStopped = true;
             navAgent.enabled = false;
         }
-        
-        // Ocultar modelo para vista en primera persona
+
         SetModelVisible(false);
     }
 
     public void OnReleased()
     {
         isPossessed = false;
-        
-        // Reactivar NavMeshAgent cuando es liberado
+
         if (navAgent != null)
         {
             navAgent.enabled = true;
             navAgent.isStopped = false;
         }
-        
-        // Mostrar modelo de nuevo
+
         SetModelVisible(true);
-        
-        Debug.Log($"{name} liberado");
     }
 
     /// <summary>
-    /// Aplica daño al enemigo. Si muere, activa el ragdoll con fuerza en el punto de impacto.
+    /// Aplica daño. Si muere, activa ragdoll escalado por el daño final.
     /// </summary>
     public void TakeDamage(float damage, Vector3 hitPoint, Vector3 hitDirection)
     {
@@ -136,67 +136,42 @@ public class EnemyController : MonoBehaviour
         inventory.TakeDamage(damage);
 
         if (inventory.IsDead)
-            Die(hitPoint, hitDirection);
-        else
-            hitReactionController?.ReactToHit(hitPoint, hitDirection);
+            Die(damage, hitPoint, hitDirection);
     }
 
-    private void Die(Vector3 hitPoint, Vector3 hitDirection)
+    private void Die(float finalDamage, Vector3 hitPoint, Vector3 hitDirection)
     {
-        // Detener IA
         EnemyAI ai = GetComponent<EnemyAI>();
         if (ai != null) ai.enabled = false;
 
-        // Detener agente y controlador de movimiento
         if (navAgent != null) { navAgent.isStopped = true; navAgent.enabled = false; }
         if (characterController != null) characterController.enabled = false;
 
-        // Desactivar animador
-        Animator animator = GetComponentInChildren<Animator>();
-        if (animator != null) animator.enabled = false;
-
-        // Asegurarse de que el modelo es visible
         SetModelVisible(true);
 
-        // Activar ragdoll: hacer todos los Rigidbody hijos no-cinemáticos
-        Rigidbody[] ragdollBodies = GetComponentsInChildren<Rigidbody>();
-        Rigidbody closestRb = null;
-        float closestDist = float.MaxValue;
-
-        foreach (Rigidbody rb in ragdollBodies)
+        // HitReactionController desactiva el Animator y activa el ragdoll físico
+        if (hitReactionController != null)
         {
-            rb.isKinematic = false;
-            float dist = Vector3.Distance(rb.transform.position, hitPoint);
-            if (dist < closestDist)
+            hitReactionController.ActivateRagdoll(finalDamage, hitPoint, hitDirection);
+        }
+        else
+        {
+            // Fallback si no hay HitReactionController en el prefab
+            Animator animator = GetComponentInChildren<Animator>();
+            if (animator != null) animator.enabled = false;
+
+            Vector3 dir = hitDirection.normalized;
+            foreach (Rigidbody rb in GetComponentsInChildren<Rigidbody>())
             {
-                closestDist = dist;
-                closestRb = rb;
+                rb.isKinematic = false;
+                rb.AddForce(dir * ragdollForce, ForceMode.VelocityChange);
             }
         }
-
-        // Aplicar fuerza de impacto en el hueso más cercano al punto de impacto
-        // Aplicar velocidad a todos los huesos (distribuida) para evitar que salgan volando
-        Vector3 impulseDir = hitDirection.normalized;
-        foreach (Rigidbody rb in ragdollBodies)
-        {
-            float distFactor = 1f / (1f + Vector3.Distance(rb.transform.position, hitPoint));
-            rb.AddForce(impulseDir * ragdollForce * distFactor, ForceMode.VelocityChange);
-        }
-
-        // Fuerza extra en el hueso del impacto
-        if (closestRb != null)
-            closestRb.AddForce(impulseDir * ragdollForce * 0.5f, ForceMode.VelocityChange);
     }
-    
-    /// <summary>
-    /// Muestra u oculta todos los renderers del modelo (para primera persona)
-    /// </summary>
+
     public void SetModelVisible(bool visible)
     {
-        Renderer[] renderers = GetComponentsInChildren<Renderer>();
-        foreach (var renderer in renderers)
-        {
-            renderer.enabled = visible;
-        }
+        foreach (var r in GetComponentsInChildren<Renderer>())
+            r.enabled = visible;
     }
 }

@@ -15,21 +15,32 @@ MonoBehaviour:
   weaponName: Pistol
   bulletsPerMagazine: 12
   maxBullets: 36
-  fireRate: 0.2
+  fireRate: 0.5
+  isAutomatic: 0
   damage: 30
-  bulletSpeed: 20
-  bulletLifetime: 3
-  bulletPrefab: {fileID: 5478078452442279726, guid: e5815b4569f4c0744906589582e6d88e, type: 3}
+  maxHitscanDistance: 500
+  impactLayerMask:
+    serializedVersion: 2
+    m_Bits: 1664
+  pelletsPerShot: 1
+  isMelee: 0
+  meleeRange: 1.5
+  meleeDamage: 60
+  baseDispersion: 1.5
+  movingDispersionMultiplier: 5
+  sprintingDispersionMultiplier: 10
+  aimingDispersionMultiplier: 0.1
+  tracerPrefab: {fileID: 311309669414730574, guid: c7dca71ec907b46499067f07ef62512a, type: 3}
+  tracerDuration: 0.067
   pickupPrefab: {fileID: 9109955285980595624, guid: cf9e81af56c063846a34ccfb3e033fd2, type: 3}
   equippedPrefab: {fileID: 919132149155446097, guid: 5fa2f4d6a37fcf14e9d5e32d88d03c90, type: 3}
   magazinePickupPrefab: {fileID: 0}
   fpsPrefab: {fileID: 8511208052594982854, guid: 3937f819e6835aa4d907acd07762d8dc, type: 3}
   fpsPositionOffset: {x: 0.6, y: -0.6, z: -0.6}
   fpsRotationOffset: {x: 0, y: 0, z: 0}
-  recoilAngle: 15
-  recoilDuration: 0.05
-  recoilRecoveryDuration: 0.15
-  fireShakeIntensity: 1
+  recoilAngle: 5
+  recoilDuration: 1
+  recoilRecoveryDuration: 4
+  fireShakeIntensity: 0.5
   equippedPositionOffset: {x: 0, y: 0, z: 0.5}
   equippedRotationOffset: {x: 0, y: 0, z: 0}
-  muzzleOffset: {x: 0, y: 0, z: 0}

@@ -155,7 +155,7 @@ public class EnemyAI : MonoBehaviour
         enemyController = GetComponent<EnemyController>();
         inventory = GetComponent<InventoryHolder>();
         wanderOrigin = transform.position;
-        animator = GetComponent<Animator>();
+        animator = GetComponentInChildren<Animator>();
     }
 
     void Start()
@@ -306,7 +306,9 @@ public class EnemyAI : MonoBehaviour
     private void ConfigureNavMeshAgent()
     {
         // Movimiento rígido sin aceleración/desaceleración
-        navAgent.speed = moveSpeed;
+        navAgent.speed = enemyController.Stats != null
+            ? enemyController.Stats.walkSpeed
+            : moveSpeed;
         navAgent.angularSpeed = 0f; // Desactivar rotación automática del NavMesh
         navAgent.acceleration = acceleration; // Aceleración instantánea
         navAgent.stoppingDistance = stoppingDistance;
@@ -456,7 +458,7 @@ public class EnemyAI : MonoBehaviour
     private void UpdateWandering()
     {
         navAgent.isStopped = false;
-        navAgent.speed = moveSpeed;
+        navAgent.speed = GetWalkSpeed();
 
         // Buscar nuevo punto de deambulación
         if (Time.time >= nextWanderTime || HasReachedDestination())
@@ -472,7 +474,7 @@ public class EnemyAI : MonoBehaviour
 
     private void UpdatePatrolling()
     {
-        navAgent.speed = moveSpeed;
+        navAgent.speed = GetWalkSpeed();
 
         if (patrolRoute.Count == 0)
         {
@@ -517,7 +519,7 @@ public class EnemyAI : MonoBehaviour
     private void UpdateChasing()
     {
         navAgent.isStopped = false;
-        navAgent.speed = chaseSpeed;
+        navAgent.speed = GetRunSpeed();
 
         // Si tenemos arma con balas, cambiar a combate a distancia
         if (inventory.HasWeapon && inventory.EquippedWeapon.currentBullets > 0)
@@ -557,7 +559,7 @@ public class EnemyAI : MonoBehaviour
             return;
         }
 
-        navAgent.speed = moveSpeed; // Moverse más lento en combate
+        navAgent.speed = GetWalkSpeed(); // Moverse más lento en combate
 
         float distanceToPlayer = Vector3.Distance(transform.position, playerTransform.position);
 
@@ -622,31 +624,33 @@ public class EnemyAI : MonoBehaviour
     {
         if (!inventory.HasWeapon || inventory.EquippedWeapon.currentBullets <= 0)
             return;
-        
-        // Calcular dirección al jugador
-        Vector3 eyePosition = transform.position + Vector3.up * 1f;
+
+        Vector3 eyePosition  = transform.position + Vector3.up * 1f;
         Vector3 playerCenter = playerTransform.position + Vector3.up * 0.5f;
-        Vector3 directionToPlayer = (playerCenter - eyePosition).normalized;
-        
-        // Verificar línea de visión clara (sin obstáculos)
-        float distanceToPlayer = Vector3.Distance(eyePosition, playerCenter);
-        if (Physics.Raycast(eyePosition, directionToPlayer, out RaycastHit hit, distanceToPlayer, obstructionMask))
-        {
-            // Hay un obstáculo, no disparar
+        Vector3 dirToPlayer  = (playerCenter - eyePosition).normalized;
+        float   dist         = Vector3.Distance(eyePosition, playerCenter);
+
+        // Verificar línea de visión antes de disparar
+        if (Physics.Raycast(eyePosition, dirToPlayer, out RaycastHit hit, dist, obstructionMask))
             return;
-        }
-        
-        // Disparar usando el sistema de inventario
-        if (inventory.TryFire(directionToPlayer))
-        {
-            Debug.Log($"[COMBAT] {name}: ¡Disparo!");
-        }
+
+        WeaponState state = navAgent.velocity.sqrMagnitude > 0.1f
+            ? WeaponState.Moving
+            : WeaponState.Idle;
+
+        float tremor = enemyController.Stats != null
+            ? enemyController.Stats.handTremor
+            : 0f;
+
+        // La IA dispara en dirección precalculada — TryFireInDirection aplica
+        // dispersión adicional desde el muzzle igual que el modo FPS del jugador
+        inventory.TryFireInDirection(dirToPlayer, state, tremor);
     }
 
     private void UpdateInvestigating()
     {
         navAgent.isStopped = false;
-        navAgent.speed = chaseSpeed; // Ir rápido a investigar
+        navAgent.speed = GetRunSpeed(); // Ir rápido a investigar
 
         // Si volvemos a ver al jugador, el sistema de prioridades decidirá qué hacer
         // (Chasing si no tiene arma/balas, CombatEngaged si tiene)
@@ -678,7 +682,7 @@ public class EnemyAI : MonoBehaviour
     private void UpdateSearching()
     {
         navAgent.isStopped = false;
-        navAgent.speed = moveSpeed;
+        navAgent.speed = GetRunSpeed(); // Ir rápido a investigar
 
         // Si vemos al jugador, perseguir inmediatamente
         if (CanSeePlayer)
@@ -764,7 +768,7 @@ public class EnemyAI : MonoBehaviour
     private void UpdateReturning()
     {
         navAgent.isStopped = false;
-        navAgent.speed = moveSpeed;
+        navAgent.speed = GetWalkSpeed();
 
         if (HasReachedDestination())
         {
@@ -776,7 +780,7 @@ public class EnemyAI : MonoBehaviour
     private void UpdateSeekingItem()
     {
         navAgent.isStopped = false;
-        navAgent.speed = chaseSpeed; // Ir rápido a recoger items
+        navAgent.speed = GetRunSpeed(); // Ir rápido a recoger items
 
         // Si el item fue destruido o recogido por otro
         if (targetItem == null)
@@ -1060,10 +1064,26 @@ public class EnemyAI : MonoBehaviour
 
     private void UpdateAnimations()
     {
-        if (animator == null) return;
+        EnemyLocomotion locomotion = GetComponent<EnemyLocomotion>();
+        if (locomotion == null) return;
 
-        bool isMoving = !navAgent.isStopped && navAgent.desiredVelocity.sqrMagnitude > 0.01f;
-        animator.SetBool("IsWalking", isMoving);
+        // No pisar un Aiming activo (lo gestiona EnemyCombatActions)
+        if (locomotion.State == EnemyLocomotionState.Aiming) return;
+
+        EnemyLocomotionState newState = CurrentState switch
+        {
+            AIState.Chasing        => EnemyLocomotionState.Running,
+            AIState.Searching      => EnemyLocomotionState.Running,
+            AIState.CombatEngaged  => EnemyLocomotionState.Running,
+            AIState.Investigating  => EnemyLocomotionState.Running,
+            AIState.Wandering      => EnemyLocomotionState.Walking,
+            AIState.Patrolling     => EnemyLocomotionState.Walking,
+            AIState.Returning      => EnemyLocomotionState.Walking,
+            AIState.SeekingItem    => EnemyLocomotionState.Walking,
+            _                      => EnemyLocomotionState.Idle,    // Idle, Stationary…
+        };
+
+        locomotion.SetState(newState);
     }
 
     private void SetState(AIState newState)
@@ -1368,4 +1388,20 @@ public class EnemyAI : MonoBehaviour
     }
 
     #endregion
+
+    // Nuevos metodos del parche (helpers para obtener velocidades basadas en stats)
+    
+    private float GetWalkSpeed()
+    {
+        return enemyController.Stats != null
+            ? enemyController.Stats.walkSpeed
+            : moveSpeed;
+    }
+
+    private float GetRunSpeed()
+    {
+        return enemyController.Stats != null
+            ? enemyController.Stats.runSpeed
+            : chaseSpeed;
+    }
 }

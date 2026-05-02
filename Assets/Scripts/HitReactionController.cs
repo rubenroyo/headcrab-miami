@@ -1,100 +1,81 @@
-using System.Collections;
 using UnityEngine;
 
 /// <summary>
-/// Reacciones físicas a impactos de bala por zona corporal.
-/// Pausa el Animator brevemente y aplica un impulso al hueso más cercano al golpe.
+/// Gestiona el ragdoll de muerte del enemigo.
+/// Los Rigidbodies permanecen kinematic durante el juego normal;
+/// al morir se activan y reciben una fuerza proporcional al daño final.
+///
+/// Los Rigidbodies de los huesos deben existir (creados con
+/// GameObject > 3D Object > Ragdoll en el editor).
 /// </summary>
 [RequireComponent(typeof(EnemyController))]
 public class HitReactionController : MonoBehaviour
 {
-    [Header("Fuerza por zona")]
-    [SerializeField] private float headForce    = 60f;
-    [SerializeField] private float torsoForce   = 40f;
-    [SerializeField] private float legsForce    = 25f;
+    [Header("Muerte — Ragdoll")]
+    [Tooltip("Fuerza base del ragdoll de muerte.")]
+    [SerializeField] private float baseDeathForce = 5f;
 
-    [Header("Duración de la reacción")]
-    [SerializeField] private float reactionDuration = 0.18f;
+    [Tooltip("Daño de referencia para escalar la fuerza (30 = pistola). " +
+             "Más daño → más fuerza, menos → menos (clamp 0.5×–4×).")]
+    [SerializeField] private float damageReference = 30f;
 
-    // Umbrales de altura relativa (0 = pies, 1 = cabeza)
-    private const float HEAD_THRESHOLD  = 0.72f;
-    private const float TORSO_THRESHOLD = 0.35f;
-
-    private EnemyController enemyController;
-    private CharacterController characterController;
-    private Animator animator;
-    private bool reacting = false;
+    private Rigidbody[] ragdollBodies;
+    private Animator    animator;
 
     void Awake()
     {
-        enemyController       = GetComponent<EnemyController>();
-        characterController   = GetComponent<CharacterController>();
-        animator              = GetComponentInChildren<Animator>();
+        ragdollBodies = GetComponentsInChildren<Rigidbody>();
+        animator      = GetComponentInChildren<Animator>();
+
+        // Kinematic hasta la muerte: el Animator controla los huesos.
+        foreach (var rb in ragdollBodies)
+            rb.isKinematic = true;
     }
+
+    // ─────────────────────────────────────────────
+    //  API PÚBLICA
+    // ─────────────────────────────────────────────
 
     /// <summary>
-    /// Llama esto cuando la bala impacta al enemigo (y aún está vivo).
+    /// Activa el ragdoll completo al morir.
+    /// La fuerza se escala con el daño final y se atenúa en huesos alejados del impacto.
     /// </summary>
-    public void ReactToHit(Vector3 hitPoint, Vector3 hitDirection)
+    public void ActivateRagdoll(float finalDamage, Vector3 hitPoint, Vector3 hitDirection)
     {
-        if (reacting || enemyController.IsDead) return;
+        if (ragdollBodies == null) return;
 
-        Rigidbody[] bones = GetComponentsInChildren<Rigidbody>();
-        if (bones.Length == 0) return;
+        if (animator != null) animator.enabled = false;
 
-        // Determinar zona por altura relativa del impacto
-        float charHeight = characterController != null ? characterController.height : 1.8f;
-        float relativeHeight = Mathf.Clamp01((hitPoint.y - transform.position.y) / charHeight);
+        float forceScale = Mathf.Clamp(finalDamage / Mathf.Max(damageReference, 1f), 0.5f, 4f);
+        float force      = baseDeathForce * forceScale;
+        Vector3 dir      = hitDirection.normalized;
 
-        float force;
-        if (relativeHeight >= HEAD_THRESHOLD)
-            force = headForce;
-        else if (relativeHeight >= TORSO_THRESHOLD)
-            force = torsoForce;
-        else
-            force = legsForce;
+        Rigidbody closestRb = FindClosestBone(hitPoint);
 
-        // Hueso más cercano al punto de impacto
-        Rigidbody targetBone = GetClosestBone(bones, hitPoint);
-        if (targetBone == null) return;
+        foreach (var rb in ragdollBodies)
+        {
+            rb.isKinematic = false;
+            float distFactor = 1f / (1f + Vector3.Distance(rb.transform.position, hitPoint));
+            rb.AddForce(dir * force * distFactor, ForceMode.VelocityChange);
+        }
 
-        StartCoroutine(HitReactionRoutine(targetBone, hitDirection, force));
+        if (closestRb != null)
+            closestRb.AddForce(dir * force * 0.5f, ForceMode.VelocityChange);
     }
 
-    private Rigidbody GetClosestBone(Rigidbody[] bones, Vector3 hitPoint)
+    // ─────────────────────────────────────────────
+    //  PRIVADO
+    // ─────────────────────────────────────────────
+
+    private Rigidbody FindClosestBone(Vector3 point)
     {
         Rigidbody closest = null;
-        float closestDist = float.MaxValue;
-        foreach (var rb in bones)
+        float minDist = float.MaxValue;
+        foreach (var rb in ragdollBodies)
         {
-            float dist = Vector3.Distance(rb.transform.position, hitPoint);
-            if (dist < closestDist)
-            {
-                closestDist = dist;
-                closest = rb;
-            }
+            float d = Vector3.Distance(rb.transform.position, point);
+            if (d < minDist) { minDist = d; closest = rb; }
         }
         return closest;
-    }
-
-    private IEnumerator HitReactionRoutine(Rigidbody bone, Vector3 hitDirection, float force)
-    {
-        reacting = true;
-
-        // Pausar el Animator para que no luche con la física
-        if (animator != null) animator.speed = 0f;
-
-        bone.isKinematic = false;
-        bone.AddForce(hitDirection.normalized * force, ForceMode.Impulse);
-
-        yield return new WaitForSeconds(reactionDuration);
-
-        // Restaurar: volver a cinemático y reanudar Animator
-        if (bone != null)
-            bone.isKinematic = true;
-
-        if (animator != null) animator.speed = 1f;
-
-        reacting = false;
     }
 }

@@ -108,6 +108,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 46a83e8ee7ca8dc47b334f18d17062be, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EnemyController
+  stats: {fileID: 11400000, guid: d12131dd2bcaa8c4f9a03e8fded2e39c, type: 2}
   gravity: 20
   ragdollForce: 20
 --- !u!114 &3102562654000407271
@@ -127,7 +128,7 @@ MonoBehaviour:
   equippedWeapon:
     weaponType: {fileID: 11400000, guid: 45366b76c0d4b9847a2f16a9d4bec283, type: 2}
     currentBullets: 99
-  weaponAnchor: {fileID: 0}
+  weaponAnchor: {fileID: 4662697729492187656}
   bulletPoolSize: 16
 --- !u!195 &5126645916043886955
 NavMeshAgent:
@@ -347,6 +348,18 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 1589824653905378431}
     m_Modifications:
+    - target: {fileID: 2522521802773524494, guid: a5ae881893eedb643ab8937b30c5fa6a, type: 3}
+      propertyPath: m_Mesh
+      value: 
+      objectReference: {fileID: 4300000, guid: a2303ba5a476771439559553234428d9, type: 2}
+    - target: {fileID: 2522521802773524494, guid: a5ae881893eedb643ab8937b30c5fa6a, type: 3}
+      propertyPath: m_RootBone
+      value: 
+      objectReference: {fileID: 7255908685723642945}
+    - target: {fileID: 2522521802773524494, guid: a5ae881893eedb643ab8937b30c5fa6a, type: 3}
+      propertyPath: 'm_Materials.Array.data[0]'
+      value: 
+      objectReference: {fileID: 3263931781923126087, guid: 4691eb2ea73313045a1900c0e452b00a, type: 3}
     - target: {fileID: 5026781755058921196, guid: a5ae881893eedb643ab8937b30c5fa6a, type: 3}
       propertyPath: m_LocalPosition.x
       value: 0
@@ -1250,6 +1263,11 @@ CharacterJoint:
   m_EnablePreprocessing: 0
   m_MassScale: 1
   m_ConnectedMassScale: 1
+--- !u!4 &4662697729492187656 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 7547919270443335368, guid: a5ae881893eedb643ab8937b30c5fa6a, type: 3}
+  m_PrefabInstance: {fileID: 2885297132422513856}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &5598885287581373947 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 7330064644583559483, guid: a5ae881893eedb643ab8937b30c5fa6a, type: 3}
@@ -1452,6 +1470,11 @@ CharacterJoint:
   m_EnablePreprocessing: 0
   m_MassScale: 1
   m_ConnectedMassScale: 1
+--- !u!4 &7255908685723642945 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 5528319132443207809, guid: a5ae881893eedb643ab8937b30c5fa6a, type: 3}
+  m_PrefabInstance: {fileID: 2885297132422513856}
+  m_PrefabAsset: {fileID: 0}
 --- !u!4 &7910596023944010284 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 5026781755058921196, guid: a5ae881893eedb643ab8937b30c5fa6a, type: 3}
