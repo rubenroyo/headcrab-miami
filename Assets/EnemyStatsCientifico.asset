@@ -12,9 +12,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a27a585f1cd60fd4abc78b042035ed9e, type: 3}
   m_Name: EnemyStatsCientifico
   m_EditorClassIdentifier: Assembly-CSharp::EnemyStats
-  walkSpeed: 3
-  runSpeed: 5
+  walkSpeed: 4
+  runSpeed: 7
   sprintMultiplier: 1.6
   aimSpeedMultiplier: 0.5
   rotationSpeed: 180
-  handTremor: 1
+  handTremor: 0

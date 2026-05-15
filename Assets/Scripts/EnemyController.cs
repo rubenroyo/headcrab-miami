@@ -1,6 +1,8 @@
 using UnityEngine;
 using UnityEngine.AI;
 
+public enum PossessionHighlightType { None, Possessable, Targeted }
+
 /// <summary>
 /// Controlador base de enemigos.
 /// Gestiona el estado de posesión, movimiento con colisiones y referencia al inventario.
@@ -27,6 +29,15 @@ public class EnemyController : MonoBehaviour
 
     public bool CanBePossessed => true;
 
+    // ─── Highlight de posesión ───
+    private static readonly int BaseColorId        = Shader.PropertyToID("_BaseColor");
+    private static readonly Color HighlightRed   = new Color(4f, 0f,  0f,  1f);   // HDR rojo saturado  (objetivo seleccionado)
+    private static readonly Color HighlightWhite = new Color(4f, 4f,  4f,  1f);   // HDR blanco brillante (poseibles en rango)
+
+    private Renderer[]               cachedRenderers;
+    private MaterialPropertyBlock    highlightBlock;
+    private PossessionHighlightType  currentHighlight = PossessionHighlightType.None;
+
     private bool isPossessed = false;
     private InventoryHolder inventory;
     private HitReactionController hitReactionController;
@@ -52,6 +63,7 @@ public class EnemyController : MonoBehaviour
         characterController = GetComponent<CharacterController>();
         navAgent = GetComponent<NavMeshAgent>();
         hitReactionController = GetComponent<HitReactionController>();
+        cachedRenderers = GetComponentsInChildren<Renderer>(true);
 
         if (stats == null)
             Debug.LogWarning($"[{name}] EnemyController: no tiene EnemyStats asignado. " +
@@ -173,5 +185,34 @@ public class EnemyController : MonoBehaviour
     {
         foreach (var r in GetComponentsInChildren<Renderer>())
             r.enabled = visible;
+    }
+
+    /// <summary>
+    /// Aplica o elimina el tinte de highlight de posesión vía MaterialPropertyBlock.
+    /// Usa _BaseColor (URP). Si tu shader usa otro nombre, cámbialo en BaseColorId.
+    /// </summary>
+    public void SetPossessionHighlight(PossessionHighlightType type)
+    {
+        if (type == currentHighlight) return;
+        currentHighlight = type;
+
+        if (cachedRenderers == null)
+            cachedRenderers = GetComponentsInChildren<Renderer>(true);
+
+        if (type == PossessionHighlightType.None)
+        {
+            foreach (var r in cachedRenderers)
+                r?.SetPropertyBlock(null);
+            return;
+        }
+
+        if (highlightBlock == null) highlightBlock = new MaterialPropertyBlock();
+
+        // Targeted (objetivo seleccionado) → rojo; Possessable (en rango) → blanco
+        highlightBlock.SetColor(BaseColorId,
+            type == PossessionHighlightType.Targeted ? HighlightRed : HighlightWhite);
+
+        foreach (var r in cachedRenderers)
+            r?.SetPropertyBlock(highlightBlock);
     }
 }

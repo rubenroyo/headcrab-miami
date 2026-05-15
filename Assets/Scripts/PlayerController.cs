@@ -1,17 +1,19 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 public enum PlayerState
 {
     Normal,
-    Crouching,       // Agachado en el suelo (deslizando hasta parar)
-    Jumping,         // Salto normal en el aire
-    Backflip,        // Salto hacia atrás desde agachado sin dirección
-    LongJump,        // Salto largo desde agachado con dirección
-    AirRoll,         // Voltereta en el aire: 1s suspendido, decide dive o ground pound
-    Dive,            // Arco bajo hacia donde se mueve el personaje
-    GroundPound,     // Caída en picado
-    GroundPoundLand, // Stun al aterrizar del ground pound
-    Possessing
+    Crouching,        // Agachado en el suelo (deslizando hasta parar)
+    Jumping,          // Salto normal en el aire
+    Backflip,         // Salto hacia atrás desde agachado sin dirección
+    LongJump,         // Salto largo desde agachado con dirección
+    AirRoll,          // Voltereta en el aire: 1s suspendido, decide dive o ground pound
+    Dive,             // Arco bajo hacia donde se mueve el personaje
+    GroundPound,      // Caída en picado
+    GroundPoundLand,  // Stun al aterrizar del ground pound
+    Possessing,
+    PossessingTravel  // Viajando por el camino orgánico hacia el objetivo de posesión
 }
 
 [RequireComponent(typeof(CharacterController))]
@@ -138,6 +140,19 @@ public class PlayerController : MonoBehaviour
     [Header("Posesión")]
     [SerializeField] private float possessionCooldown = 0.5f;
     [SerializeField] private float possessionRange = 3f;
+    [SerializeField] private PossessionAimingSystem possessionAimingSystem;
+
+    [Header("Viaje de posesión")]
+    [SerializeField] private PossessionPathRenderer possessionPathRenderer;
+    [SerializeField] private float possessionTravelSpeed    = 8f;
+    [SerializeField] private float possessionArrivalRadius  = 0.8f;
+    [SerializeField] private float possessionArrivalDelay   = 1f;
+
+    private List<UnityEngine.Vector3> travelPath;
+    private int                       travelPathIndex;
+    private float                     travelArrivalTimer = -1f;
+    private EnemyController           travelTarget;
+    private CharacterController       travelTargetCC;     // para restaurar colisión al terminar
 
     [Header("Sprint (posesión)")]
     [SerializeField] private float sprintFOV = 100f;
@@ -194,6 +209,12 @@ public class PlayerController : MonoBehaviour
             thirdPersonCamera = FindFirstObjectByType<ThirdPersonOrbitCamera>();
         if (cinemachineCamera == null)
             cinemachineCamera = FindFirstObjectByType<CinemachineCameraController>();
+        if (possessionAimingSystem == null)
+            possessionAimingSystem = GetComponentInChildren<PossessionAimingSystem>()
+                                     ?? FindFirstObjectByType<PossessionAimingSystem>();
+        if (possessionPathRenderer == null)
+            possessionPathRenderer = GetComponentInChildren<PossessionPathRenderer>()
+                                     ?? FindFirstObjectByType<PossessionPathRenderer>();
 
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
@@ -239,6 +260,15 @@ public class PlayerController : MonoBehaviour
             case PlayerState.GroundPound:     UpdateGroundPound();     break;
             case PlayerState.GroundPoundLand: UpdateGroundPoundLand(); break;
             case PlayerState.Possessing:      UpdatePossessing();      break;
+            case PlayerState.PossessingTravel: UpdatePossessingTravel(); break;
+        }
+
+        // Si salimos del estado Normal con el apuntado activo, limpiarlo
+        if (CurrentState != PlayerState.Normal &&
+            possessionAimingSystem != null && possessionAimingSystem.IsActive)
+        {
+            cinemachineCamera?.ExitAimMode();
+            possessionAimingSystem.Deactivate();
         }
     }
 
@@ -252,8 +282,137 @@ public class PlayerController : MonoBehaviour
         UpdateCoyoteAndBuffer();
         HandleJumpInput();
 
-        if (Input.GetKeyDown(KeyCode.E))
-            TryPossessNearbyEnemy();
+        // RMB: Aim Camera + sistema de apuntado de posesión
+        if (cinemachineCamera != null)
+        {
+            if (Input.GetMouseButtonDown(1))
+            {
+                cinemachineCamera.EnterAimMode();
+                possessionAimingSystem?.Activate();
+                if (playerAnimatorController == null)
+                    playerAnimatorController = GetComponent<PlayerAnimatorController>();
+                playerAnimatorController?.SetAimingPossession(true);
+            }
+            else if (Input.GetMouseButtonUp(1))
+            {
+                cinemachineCamera.ExitAimMode();
+                possessionAimingSystem?.Deactivate();
+                if (playerAnimatorController == null)
+                    playerAnimatorController = GetComponent<PlayerAnimatorController>();
+                playerAnimatorController?.SetAimingPossession(false);
+            }
+        }
+
+        // C: iniciar viaje de posesión si hay objetivo apuntado y ruta calculada
+        if (Input.GetKeyDown(KeyCode.C))
+        {
+            if (possessionAimingSystem == null)          Debug.LogWarning("[PC] possessionAimingSystem es null");
+            else if (!possessionAimingSystem.IsActive)   Debug.LogWarning("[PC] possessionAimingSystem no está activo (¿mantienes RMB?)");
+            else if (!possessionAimingSystem.HasTarget)  Debug.LogWarning("[PC] no hay enemigo apuntado dentro del rango");
+            else if (possessionPathRenderer == null)     Debug.LogWarning("[PC] possessionPathRenderer es null — asígnalo en el Inspector o asegúrate de que está en la escena");
+            else if (!possessionPathRenderer.HasPath)    Debug.LogWarning("[PC] possessionPathRenderer.HasPath = false — el NavMesh aún no calculó la ruta");
+            else
+                EnterPossessingTravel();
+        }
+    }
+
+    // ─────────────────────────────────────────────
+    //  POSESIÓN — viaje por la ruta orgánica
+    // ─────────────────────────────────────────────
+
+    void EnterPossessingTravel()
+    {
+        travelTarget    = possessionAimingSystem.BestTarget;
+        travelPath      = possessionPathRenderer.GetCurrentOrganicPath();
+        travelPathIndex = 0;
+        travelArrivalTimer = -1f;
+
+        // Detener la cámara de apuntado y los visuales
+        cinemachineCamera?.ExitAimMode();
+        cinemachineCamera?.EnterFollowPossessionMode(travelTarget.transform);
+        possessionAimingSystem?.Deactivate();
+        possessionPathRenderer?.Freeze();
+
+        // Salir de la pose de apuntado
+        if (playerAnimatorController == null)
+            playerAnimatorController = GetComponent<PlayerAnimatorController>();
+        playerAnimatorController?.SetAimingPossession(false);
+
+        currentVelocity = Vector3.zero;
+        CurrentState    = PlayerState.PossessingTravel;
+
+        // Ignorar la colisión con el CharacterController del enemigo mientras viajamos
+        travelTargetCC = travelTarget.GetComponent<CharacterController>();
+        if (travelTargetCC != null)
+            Physics.IgnoreCollision(characterController, travelTargetCC, true);
+    }
+
+    void UpdatePossessingTravel()
+    {
+        ApplyGravity();
+
+        if (travelTarget == null || travelPath == null || travelPath.Count < 2)
+        {
+            // Objetivo inválido: abortar
+            RestoreTravelCollision();
+            possessionPathRenderer?.UnfreezeAndClear();
+            CurrentState = PlayerState.Normal;
+            return;
+        }
+
+        // ── ¿Hemos llegado junto al objetivo? ──────────────────
+        float distXZ = new Vector2(
+            transform.position.x - travelTarget.transform.position.x,
+            transform.position.z - travelTarget.transform.position.z).magnitude;
+
+        if (distXZ < possessionArrivalRadius)
+        {
+            // Iniciar cuenta regresiva en el primer frame de llegada
+            if (travelArrivalTimer < 0f)
+                travelArrivalTimer = possessionArrivalDelay;
+
+            currentVelocity = Vector3.zero;
+            characterController.Move(Vector3.up * verticalVelocity * Time.deltaTime);
+
+            travelArrivalTimer -= Time.deltaTime;
+            if (travelArrivalTimer <= 0f)
+            {
+                RestoreTravelCollision();
+                possessionPathRenderer?.UnfreezeAndClear();
+                PossessEnemy(travelTarget);
+            }
+            return;
+        }
+
+        // ── Avanzar al siguiente waypoint ─────────────────────
+        // Saltar waypoints ya superados
+        while (travelPathIndex < travelPath.Count - 1)
+        {
+            Vector3 wp = travelPath[travelPathIndex];
+            float d = new Vector2(transform.position.x - wp.x, transform.position.z - wp.z).magnitude;
+            if (d > 0.25f) break;
+            travelPathIndex++;
+        }
+
+        Vector3 waypoint = travelPath[travelPathIndex];
+        Vector3 dir      = new Vector3(waypoint.x - transform.position.x, 0f, waypoint.z - transform.position.z);
+        if (dir.sqrMagnitude > 0.0001f) dir.Normalize();
+
+        currentVelocity = dir * possessionTravelSpeed;
+        RotateTowardsVelocity(rotationSpeedGround);
+
+        Vector3 move = currentVelocity;
+        move.y = verticalVelocity;
+        characterController.Move(move * Time.deltaTime);
+    }
+
+    void RestoreTravelCollision()
+    {
+        if (travelTargetCC != null)
+        {
+            Physics.IgnoreCollision(characterController, travelTargetCC, false);
+            travelTargetCC = null;
+        }
     }
 
     void UpdateCrouching()
@@ -738,6 +897,14 @@ public class PlayerController : MonoBehaviour
     {
         if (Time.time - lastDismountTime < possessionCooldown) return;
 
+        // Si el sistema de apuntado está activo, usar su mejor objetivo
+        if (possessionAimingSystem != null && possessionAimingSystem.HasTarget)
+        {
+            PossessEnemy(possessionAimingSystem.BestTarget);
+            return;
+        }
+
+        // Fallback: enemigo más cercano dentro del rango corto
         Collider[] hits = Physics.OverlapSphere(transform.position, possessionRange);
         EnemyController closest = null;
         float closestDist = float.MaxValue;
@@ -763,6 +930,10 @@ public class PlayerController : MonoBehaviour
     {
         verticalVelocity = 0f;
         currentVelocity  = Vector3.zero;
+
+        // Cerrar el modo de apuntado si estaba activo
+        possessionAimingSystem?.Deactivate();
+        cinemachineCamera?.ExitAimMode();
 
         if (characterController != null)
             characterController.enabled = true;
@@ -791,6 +962,9 @@ public class PlayerController : MonoBehaviour
 
         if (CrosshairController.Instance != null)
             CrosshairController.Instance.SetVisible(true);
+
+        if (PossessionHUD.Instance != null)
+            PossessionHUD.Instance.Attach(enemy.Inventory);
     }
 
     public void ReleaseEnemy()
@@ -801,6 +975,9 @@ public class PlayerController : MonoBehaviour
 
         if (CrosshairController.Instance != null)
             CrosshairController.Instance.SetVisible(false);
+
+        if (PossessionHUD.Instance != null)
+            PossessionHUD.Instance.Detach();
 
         CurrentState = PlayerState.Normal;
     }
@@ -881,6 +1058,18 @@ public class PlayerController : MonoBehaviour
         if (fireInput)
             TryFirePossessedWeapon();
 
+        // Recarga manual con R
+        if (Input.GetKeyDown(KeyCode.R))
+            possessedCombatActions.StartReload();
+
+        // Interactuar con E (puerta o recoger ítem)
+        if (Input.GetKeyDown(KeyCode.E))
+            TryInteract();
+
+        // Soltar arma con Q
+        if (Input.GetKeyDown(KeyCode.Q))
+            TryDropPossessedWeapon();
+
         UpdateSprintFOV();
         HandlePossessedMovement(stats);
 
@@ -917,6 +1106,81 @@ public class PlayerController : MonoBehaviour
             possessedCombatActions.Run(moveDirection);
         else
             possessedCombatActions.Walk(moveDirection);   // sin aimMult
+    }
+
+    /// <summary>
+    /// Interacción unificada con E: elige la puerta o el arma más "enfocada"
+    /// usando un score de orientación (dot product / distancia).
+    /// Si hay empate o ambas están detrás, gana la más cercana al frente.
+    /// </summary>
+    void TryInteract()
+    {
+        if (possessedEnemy == null) return;
+
+        Vector3 enemyPos     = possessedEnemy.transform.position;
+        Vector3 enemyForward = possessedEnemy.transform.forward;
+
+        // ── Buscar mejor puerta ──────────────────────────────────────────
+        DoorController bestDoor      = null;
+        float          bestDoorScore = float.MinValue;
+
+        foreach (DoorController door in DoorController.All)
+        {
+            if (!door.CanInteract) continue;
+            float dist = Vector3.Distance(enemyPos, door.transform.position);
+            if (dist > door.InteractRadius) continue;
+
+            float score = InteractScore(enemyPos, enemyForward, door.transform.position);
+            if (score > bestDoorScore) { bestDoorScore = score; bestDoor = door; }
+        }
+
+        // ── Buscar mejor arma ────────────────────────────────────────────
+        WeaponPickup    bestWeapon      = null;
+        float           bestWeaponScore = float.MinValue;
+        InventoryHolder inventory       = possessedEnemy.Inventory;
+
+        if (inventory != null)
+        {
+            foreach (WeaponPickup pickup in WeaponPickup.All)
+            {
+                if (!pickup.CanBePickedUp)       continue;
+                if (!pickup.IsNearby(inventory)) continue;
+
+                float score = InteractScore(enemyPos, enemyForward, pickup.transform.position);
+                if (score > bestWeaponScore) { bestWeaponScore = score; bestWeapon = pickup; }
+            }
+        }
+
+        // ── Ejecutar la interacción con mayor score ───────────────────────
+        bool doorWins = bestDoor != null &&
+                        (bestWeapon == null || bestDoorScore >= bestWeaponScore);
+
+        if (doorWins)
+            bestDoor.Interact();
+        else if (bestWeapon != null && inventory != null)
+            bestWeapon.PickUpByPlayer(inventory, inventory.WeaponDropPoint);
+    }
+
+    /// <summary>
+    /// Puntuación de orientación: premia los interactuables que están
+    /// enfrente del enemigo y penaliza los lejanos.
+    /// score = dot(forward, dirección_al_objetivo) / distancia
+    /// </summary>
+    float InteractScore(Vector3 from, Vector3 forward, Vector3 target)
+    {
+        Vector3 toTarget = target - from;
+        float   dist     = Mathf.Max(toTarget.magnitude, 0.01f);
+        float   dot      = Vector3.Dot(forward, toTarget / dist);
+        return dot / dist;
+    }
+
+    void TryDropPossessedWeapon()
+    {
+        if (possessedEnemy == null) return;
+        InventoryHolder inventory = possessedEnemy.Inventory;
+        if (inventory == null || !inventory.HasWeapon) return;
+
+        inventory.DropWeapon();
     }
 
     void TryFirePossessedWeapon()

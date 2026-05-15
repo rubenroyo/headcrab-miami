@@ -213,8 +213,14 @@ public class EnemyCombatActions : MonoBehaviour
     /// <summary>Estado de locomoción actual. Útil para que la IA tome decisiones.</summary>
     public EnemyLocomotionState LocomotionState => locomotion.State;
 
-    /// <summary>¿Tiene arma con balas?</summary>
-    public bool HasAmmo => inventory.HasWeapon && !inventory.EquippedWeapon.IsEmpty;
+    /// <summary>¿Tiene arma con balas en el magazine?</summary>
+    public bool HasAmmoInMagazine => inventory.HasWeapon && !inventory.EquippedWeapon.MagazineEmpty;
+
+    /// <summary>¿Tiene balas en reserva para poder recargar?</summary>
+    public bool HasReserveAmmo   => inventory.HasWeapon && inventory.EquippedWeapon.HasReserve;
+
+    /// <summary>Retrocompatibilidad: alias de HasAmmoInMagazine.</summary>
+    public bool HasAmmo => HasAmmoInMagazine;
 
     /// <summary>¿Está mirando hacia el objetivo? (dentro de un umbral de grados)</summary>
     public bool IsFacingTarget(Vector3 targetPosition, float thresholdDegrees = 10f)
@@ -271,4 +277,21 @@ public class EnemyCombatActions : MonoBehaviour
 
         return hitSomething;
     }
+
+    // ─────────────────────────────────────────────
+    //  RECARGA
+    // ─────────────────────────────────────────────
+
+    /// <summary>
+    /// Inicia la recarga del arma. Llama desde la IA o desde input del jugador.
+    /// Retorna true si la recarga comenzó.
+    /// </summary>
+    public bool StartReload()
+    {
+        if (enemyController.IsDead) return false;
+        return inventory.StartReload();
+    }
+
+    /// <summary>¿Está actualmente recargando?</summary>
+    public bool IsReloading => inventory.IsReloading;
 }

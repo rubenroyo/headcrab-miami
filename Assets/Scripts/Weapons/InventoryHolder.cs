@@ -1,4 +1,5 @@
 using UnityEngine;
+using System.Collections;
 using System.Collections.Generic;
 
 /// <summary>
@@ -18,11 +19,20 @@ public class InventoryHolder : MonoBehaviour
     [Tooltip("Transform del hueso de la mano derecha. Si es null, usa el transform del enemigo.")]
     [SerializeField] private Transform weaponAnchor;
 
+    [Header("Drop del Arma")]
+    [Tooltip("Punto desde el que se instancia el pickup al soltar el arma. Créalo como hijo vacío del enemigo.")]
+    [SerializeField] private Transform weaponDropPoint;
+
+    public Transform WeaponDropPoint => weaponDropPoint;
+
     // Visual del arma equipada
     private GameObject equippedWeaponVisual;
     private WeaponVisual equippedWeaponVisualComponent;
 
     private float nextFireTime = 0f;
+    private bool  isReloading  = false;
+
+    public bool IsReloading => isReloading;
 
     // Referencia al shooter — se busca en Awake, puede ser null si no está en el GO
     private HitscanShooter hitscanShooter;
@@ -40,6 +50,8 @@ public class InventoryHolder : MonoBehaviour
     public System.Action<float, float> OnHealthChanged;
     public System.Action               OnDeath;
     public System.Action<WeaponData>   OnWeaponChanged;
+    /// <summary>Se dispara al cambiar las balas (magazine, reserva).</summary>
+    public System.Action<int, int>     OnAmmoChanged;
 
     void Awake()
     {
@@ -95,7 +107,9 @@ public class InventoryHolder : MonoBehaviour
     public bool TryFire(Camera shooterCamera, WeaponState state = WeaponState.Idle, float handTremor = 0f)
     {
         if (!HasWeapon)                           return false;
+        if (isReloading)                          return false;
         if (Time.time < nextFireTime)             return false;
+        if (equippedWeapon.MagazineEmpty)         return false;
         if (!equippedWeapon.ConsumeBullet())      return false;
         if (hitscanShooter == null)
         {
@@ -104,6 +118,7 @@ public class InventoryHolder : MonoBehaviour
         }
 
         nextFireTime = Time.time + equippedWeapon.weaponType.fireRate;
+        OnAmmoChanged?.Invoke(equippedWeapon.bulletsInMagazine, equippedWeapon.reserveBullets);
         return hitscanShooter.Fire(shooterCamera, state, handTremor);
     }
 
@@ -114,7 +129,9 @@ public class InventoryHolder : MonoBehaviour
     public bool TryFireInDirection(Vector3 direction, WeaponState state = WeaponState.Idle, float handTremor = 0f)
     {
         if (!HasWeapon)                       return false;
+        if (isReloading)                      return false;
         if (Time.time < nextFireTime)         return false;
+        if (equippedWeapon.MagazineEmpty)     return false;
         if (!equippedWeapon.ConsumeBullet())  return false;
         if (hitscanShooter == null)
         {
@@ -126,7 +143,42 @@ public class InventoryHolder : MonoBehaviour
 
         // Para la IA: fingimos que la dirección ya es la dirección final dispersada.
         // HitscanShooter hace el raycast desde el muzzle en esa dirección directamente.
-        return hitscanShooter.FireInDirection(direction, state, handTremor);
+        bool fired = hitscanShooter.FireInDirection(direction, state, handTremor);
+        if (fired) OnAmmoChanged?.Invoke(equippedWeapon.bulletsInMagazine, equippedWeapon.reserveBullets);
+        return fired;
+    }
+
+    // ─────────────────────────────────────────────
+    //  RECARGA
+    // ─────────────────────────────────────────────
+
+    /// <summary>
+    /// Inicia la recarga si hay reserva y el arma no está ya recargando.
+    /// Retorna true si la recarga empezó.
+    /// </summary>
+    public bool StartReload()
+    {
+        if (!HasWeapon)            return false;
+        if (isReloading)           return false;
+        if (!equippedWeapon.CanReload) return false;
+        if (equippedWeapon.bulletsInMagazine == equippedWeapon.weaponType.magazineSize) return false;
+
+        StartCoroutine(ReloadCoroutine());
+        return true;
+    }
+
+    private IEnumerator ReloadCoroutine()
+    {
+        isReloading = true;
+        yield return new WaitForSeconds(equippedWeapon.weaponType.reloadTime);
+
+        if (HasWeapon) // puede haber soltado el arma durante la recarga
+        {
+            equippedWeapon.Reload();
+            OnAmmoChanged?.Invoke(equippedWeapon.bulletsInMagazine, equippedWeapon.reserveBullets);
+        }
+
+        isReloading = false;
     }
 
     // ─────────────────────────────────────────────
@@ -211,16 +263,16 @@ public class InventoryHolder : MonoBehaviour
     {
         if (!HasWeapon) return;
 
-        WeaponType type    = equippedWeapon.weaponType;
-        int        bullets = equippedWeapon.currentBullets;
+        // Cancelar recarga en curso
+        if (isReloading) { StopAllCoroutines(); isReloading = false; }
 
-        if (type.pickupPrefab != null)
-        {
-            Vector3    dropPosition = transform.position + Vector3.up * 0.5f + transform.forward * 0.5f;
-            GameObject pickup       = Instantiate(type.pickupPrefab, dropPosition, Quaternion.identity);
-            WeaponPickup pickupScript = pickup.GetComponent<WeaponPickup>();
-            if (pickupScript != null) pickupScript.Initialize(type, bullets);
-        }
+        WeaponType type = equippedWeapon.weaponType;
+
+        Vector3 spawnPos = weaponDropPoint != null
+            ? weaponDropPoint.position
+            : transform.position + Vector3.up * 0.5f + transform.forward * 0.5f;
+
+        WeaponPickup.SpawnDroppedWeapon(equippedWeapon, spawnPos, transform.forward);
 
         DestroyWeaponVisual();
         equippedWeapon = null;

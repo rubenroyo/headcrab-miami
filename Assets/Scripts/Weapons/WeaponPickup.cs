@@ -1,135 +1,197 @@
 using UnityEngine;
+using System.Collections.Generic;
 
 /// <summary>
-/// Permite recoger un arma del suelo.
-/// El enemigo poseído que colisione con esto y pulse "E" equipará el arma.
-/// La IA puede recogerla automáticamente con PickUpByAI().
+/// Pickup de arma del suelo con lógica de recogida dual:
+///   - IA:      llama a PickUpByAI() cuando llega al radio del arma (EnemyAI).
+///   - Poseído: PlayerController detecta que el enemigo está en el radio y
+///              el jugador pulsa E → llama PickUpByPlayer().
+///
+/// Registro estático: WeaponPickup.All permite a PlayerController encontrar
+/// los pickups cercanos sin FindObjectsByType por frame.
 /// </summary>
-[RequireComponent(typeof(Collider))]
 public class WeaponPickup : MonoBehaviour
 {
+    // ── Registro estático ────────────────────────────────────────────────
+    private static readonly List<WeaponPickup> s_All = new();
+    public  static IReadOnlyList<WeaponPickup> All => s_All;
+
+    // ── Datos del arma ───────────────────────────────────────────────────
     [Header("Datos del Arma")]
     [SerializeField] private WeaponType weaponType;
-    [SerializeField] private int currentBullets = -1; // -1 = usar balas por defecto del tipo
-    
+    [Tooltip("Balas en el cargador. -1 = usar magazineSize del WeaponType.")]
+    [SerializeField] private int bulletsInMagazine = -1;
+    [Tooltip("Balas en reserva.")]
+    [SerializeField] private int reserveBullets = 0;
+
+    [Header("Radio de recogida")]
+    [Tooltip("Radio de la esfera de interacción.")]
+    [SerializeField] private float pickupRadius = 1.5f;
+
+    // ── Estado ───────────────────────────────────────────────────────────
     private bool isPickedUp = false;
-    
-    // El InventoryHolder que está en rango para recoger
-    private InventoryHolder nearbyInventory;
-    
-    public WeaponType WeaponType => weaponType;
-    public int CurrentBullets => currentBullets >= 0 ? currentBullets : (weaponType != null ? weaponType.bulletsPerMagazine : 0);
-    public bool CanBePickedUp => !isPickedUp && weaponType != null;
-    public bool IsPickedUp => isPickedUp;
-    
-    void Start()
+
+    /// Inventarios actualmente dentro del radio de recogida.
+    private readonly HashSet<InventoryHolder> nearbyInventories = new();
+
+    // ── Propiedades ──────────────────────────────────────────────────────
+    public WeaponType WeaponType    => weaponType;
+    public bool       CanBePickedUp => !isPickedUp && weaponType != null;
+    public bool       IsPickedUp    => isPickedUp;
+
+    /// Balas en cargador (para que la IA evalúe si merece la pena recoger el arma).
+    public int CurrentBullets => bulletsInMagazine >= 0
+        ? bulletsInMagazine
+        : (weaponType != null ? weaponType.magazineSize : 0);
+
+    /// ¿Tiene este inventory dentro de su radio?
+    public bool IsNearby(InventoryHolder inv) => nearbyInventories.Contains(inv);
+
+    // ── Ciclo de vida ────────────────────────────────────────────────────
+
+    void Awake()
     {
-        // Asegurar que el collider es trigger
-        Collider col = GetComponent<Collider>();
-        if (col != null)
-            col.isTrigger = true;
-        
-        // Si no se especificaron balas, usar las del cargador
-        if (currentBullets < 0 && weaponType != null)
+        // ── Trigger sphere para detección de proximidad ──────────────────
+        // Buscamos una SphereCollider ya existente que sea trigger.
+        // Si no hay ninguna, añadimos una nueva. No tocamos los colliders
+        // no-trigger del prefab (son los que impiden atravesar el suelo).
+        SphereCollider sphere = null;
+        foreach (SphereCollider sc in GetComponents<SphereCollider>())
         {
-            currentBullets = weaponType.bulletsPerMagazine;
+            if (sc.isTrigger) { sphere = sc; break; }
         }
+        if (sphere == null)
+            sphere = gameObject.AddComponent<SphereCollider>();
+
+        sphere.radius    = pickupRadius;
+        sphere.isTrigger = true;
+
+        // ── Collider físico (no-trigger) para reposar en el suelo ────────
+        // Si el prefab no trae ninguno, añadimos una caja genérica de arma.
+        bool hasPhysicsCollider = false;
+        foreach (Collider c in GetComponents<Collider>())
+        {
+            if (!c.isTrigger) { hasPhysicsCollider = true; break; }
+        }
+        if (!hasPhysicsCollider)
+        {
+            BoxCollider box = gameObject.AddComponent<BoxCollider>();
+            box.size      = new Vector3(0.15f, 0.08f, 0.45f); // perfil genérico de pistola
+            box.isTrigger = false;
+        }
+
+        // Valores por defecto de balas
+        if (bulletsInMagazine < 0 && weaponType != null)
+            bulletsInMagazine = weaponType.magazineSize;
     }
-    
+
+    void OnEnable()  => s_All.Add(this);
+    void OnDisable() { s_All.Remove(this); nearbyInventories.Clear(); }
+
+    // ── Trigger ──────────────────────────────────────────────────────────
+
+    void OnTriggerEnter(Collider other)
+    {
+        if (isPickedUp) return;
+        InventoryHolder inv = other.GetComponentInParent<InventoryHolder>();
+        if (inv != null) nearbyInventories.Add(inv);
+    }
+
+    void OnTriggerExit(Collider other)
+    {
+        InventoryHolder inv = other.GetComponentInParent<InventoryHolder>();
+        if (inv != null) nearbyInventories.Remove(inv);
+    }
+
+    // ── API pública ──────────────────────────────────────────────────────
+
     /// <summary>
-    /// Inicializa el pickup con tipo y balas (usado cuando se suelta un arma)
+    /// Inicializa el pickup con tipo y estado de munición separado (magazine / reserva).
+    /// Llamar al instanciar un arma soltada para preservar los stats exactos.
     /// </summary>
-    public void Initialize(WeaponType type, int bullets)
+    public void Initialize(WeaponType type, int magazine, int reserve)
     {
-        weaponType = type;
-        currentBullets = bullets;
-        isPickedUp = false;
+        weaponType        = type;
+        bulletsInMagazine = magazine;
+        reserveBullets    = reserve;
+        isPickedUp        = false;
+
+        // Actualizar radio del collider si ya existe
+        SphereCollider sphere = GetComponent<SphereCollider>();
+        if (sphere != null) sphere.radius = pickupRadius;
     }
-    
-    private void OnTriggerEnter(Collider other)
-    {
-        if (isPickedUp || weaponType == null) return;
-        
-        // Solo enemigos poseídos pueden recoger armas
-        EnemyController enemy = other.GetComponent<EnemyController>();
-        if (enemy == null || !enemy.IsPossessed)
-            return;
-        
-        InventoryHolder inventory = enemy.GetComponent<InventoryHolder>();
-        if (inventory != null)
-        {
-            nearbyInventory = inventory;
-            Debug.Log($"Pulsa E para recoger {weaponType.weaponName}");
-        }
-    }
-    
-    private void OnTriggerExit(Collider other)
-    {
-        EnemyController enemy = other.GetComponent<EnemyController>();
-        if (enemy != null)
-        {
-            InventoryHolder inventory = enemy.GetComponent<InventoryHolder>();
-            if (inventory == nearbyInventory)
-            {
-                nearbyInventory = null;
-            }
-        }
-    }
-    
-    void Update()
-    {
-        if (!CanBePickedUp) return;
-        
-        // Detectar tecla E para recoger
-        if (Input.GetKeyDown(KeyCode.E))
-        {
-            PickUp();
-        }
-    }
-    
+
     /// <summary>
-    /// Recoge el arma (llamado cuando se pulsa E)
-    /// </summary>
-    public void PickUp()
-    {
-        if (isPickedUp || weaponType == null || nearbyInventory == null) return;
-        
-        PickUpInternal(nearbyInventory);
-    }
-    
-    /// <summary>
-    /// Recoge el arma por la IA (sin necesidad de trigger/pulsar E)
+    /// Recogida por IA. No requiere trigger ni input.
+    /// El enemigo llama a esto cuando llega al radio del arma (EnemyAI.UpdateSeekingItem).
+    /// El dropPoint se obtiene del InventoryHolder del enemigo.
     /// </summary>
     public bool PickUpByAI(InventoryHolder inventory)
     {
-        if (isPickedUp || weaponType == null || inventory == null) return false;
-        
-        PickUpInternal(inventory);
+        if (!CanBePickedUp || inventory == null) return false;
+        PickUpInternal(inventory, inventory.WeaponDropPoint);
         return true;
     }
-    
-    private void PickUpInternal(InventoryHolder inventory)
+
+    /// <summary>
+    /// Recogida por el jugador poseído. Solo funciona si el inventory está en el radio.
+    /// Llamar desde PlayerController cuando se pulsa E.
+    /// </summary>
+    public bool PickUpByPlayer(InventoryHolder inventory, Transform dropPoint)
     {
-        // Crear datos del arma
-        WeaponData newWeaponData = new WeaponData(weaponType, CurrentBullets);
-        
-        // Equipar el arma
-        WeaponData previousWeapon = inventory.EquipWeapon(newWeaponData);
-        
-        // Si tenía un arma anterior, crear pickup donde estaba este
-        if (previousWeapon != null && previousWeapon.weaponType != null && previousWeapon.weaponType.pickupPrefab != null)
+        if (!CanBePickedUp) return false;
+        if (!nearbyInventories.Contains(inventory)) return false;
+        PickUpInternal(inventory, dropPoint);
+        return true;
+    }
+
+    // ── Lógica interna ───────────────────────────────────────────────────
+
+    private void PickUpInternal(InventoryHolder inventory, Transform dropPoint)
+    {
+        // Construir WeaponData con el estado de munición exacto
+        WeaponData newWeapon = new WeaponData(weaponType, 0);
+        newWeapon.bulletsInMagazine = bulletsInMagazine >= 0 ? bulletsInMagazine : weaponType.magazineSize;
+        newWeapon.reserveBullets    = reserveBullets;
+
+        // Equipar — devuelve el arma anterior si había
+        WeaponData previousWeapon = inventory.EquipWeapon(newWeapon);
+
+        // Si tenía arma, soltarla en el drop point con física
+        if (previousWeapon != null && previousWeapon.weaponType?.pickupPrefab != null)
         {
-            GameObject pickupObj = Instantiate(previousWeapon.weaponType.pickupPrefab, transform.position, Quaternion.identity);
-            WeaponPickup pickup = pickupObj.GetComponent<WeaponPickup>();
-            if (pickup != null)
-            {
-                pickup.Initialize(previousWeapon.weaponType, previousWeapon.currentBullets);
-            }
+            Vector3 spawnPos = dropPoint != null
+                ? dropPoint.position
+                : transform.position + Vector3.up * 0.3f;
+
+            SpawnDroppedWeapon(previousWeapon, spawnPos, inventory.transform.forward);
         }
-        
+
         isPickedUp = true;
-        
-        // Destruir este pickup
         Destroy(gameObject);
+    }
+
+    /// <summary>
+    /// Instancia el prefab de pickup de un arma y le aplica física de tiro.
+    /// Estático para que InventoryHolder.DropWeapon() también pueda usarlo.
+    /// </summary>
+    public static GameObject SpawnDroppedWeapon(WeaponData weapon, Vector3 position, Vector3 throwDirection)
+    {
+        if (weapon?.weaponType?.pickupPrefab == null) return null;
+
+        GameObject obj    = Instantiate(weapon.weaponType.pickupPrefab, position, Random.rotation);
+        WeaponPickup pickup = obj.GetComponent<WeaponPickup>();
+        if (pickup != null)
+            pickup.Initialize(weapon.weaponType, weapon.bulletsInMagazine, weapon.reserveBullets);
+
+        // Física de tiro — si el prefab no tiene Rigidbody se añade en runtime
+        Rigidbody rb = obj.GetComponent<Rigidbody>();
+        if (rb == null) rb = obj.AddComponent<Rigidbody>();
+        rb.isKinematic = false;
+        rb.linearDamping       = 0.5f;
+        rb.AddForce(throwDirection.normalized * 4f + Vector3.up * 2.5f, ForceMode.Impulse);
+        rb.AddTorque(Random.insideUnitSphere * 3f, ForceMode.Impulse);
+
+        return obj;
     }
 }

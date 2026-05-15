@@ -11,12 +11,21 @@ public class WeaponType : ScriptableObject
     [Header("Identificación")]
     public string weaponName = "Pistol";
 
+    [Tooltip("Icono representativo del arma para el HUD.")]
+    public Sprite weaponIcon;
+
     [Header("Munición")]
+    [Tooltip("Balas que caben en un cargador (capacidad del magazine)")]
+    public int magazineSize = 10;
+
     [Tooltip("Balas que añade un cargador de este tipo")]
     public int bulletsPerMagazine = 10;
 
-    [Tooltip("Máximo de balas que puede tener el arma")]
+    [Tooltip("Máximo de balas en reserva")]
     public int maxBullets = 30;
+
+    [Tooltip("Tiempo en segundos que tarda la recarga.")]
+    public float reloadTime = 1.5f;
 
     [Header("Disparo — Hitscan")]
     [Tooltip("Segundos entre disparos")]

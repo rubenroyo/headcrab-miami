@@ -1,6 +1,6 @@
 %YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
---- !u!1 &1072990070074546951
+--- !u!1 &6561682006409702854
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -8,39 +8,40 @@ GameObject:
   m_PrefabAsset: {fileID: 0}
   serializedVersion: 6
   m_Component:
-  - component: {fileID: 805591600244897436}
-  - component: {fileID: 6980082195175316601}
-  - component: {fileID: 4173474715931147987}
-  m_Layer: 0
+  - component: {fileID: 7206936065672909876}
+  - component: {fileID: 6084454296701330663}
+  - component: {fileID: 7731390197642657797}
+  - component: {fileID: 2401851803100861920}
+  m_Layer: 11
   m_Name: PistolMagazinePickUp
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!4 &805591600244897436
+--- !u!4 &7206936065672909876
 Transform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1072990070074546951}
+  m_GameObject: {fileID: 6561682006409702854}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 1.075, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
-  - {fileID: 9222085338545295661}
+  - {fileID: 6546358691610071321}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!65 &6980082195175316601
+--- !u!65 &6084454296701330663
 BoxCollider:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1072990070074546951}
+  m_GameObject: {fileID: 6561682006409702854}
   m_Material: {fileID: 0}
   m_IncludeLayers:
     serializedVersion: 2
@@ -55,26 +56,41 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 0.5, y: 0.5, z: 0.5}
   m_Center: {x: 0, y: 0, z: 0}
---- !u!114 &4173474715931147987
+--- !u!114 &7731390197642657797
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1072990070074546951}
+  m_GameObject: {fileID: 6561682006409702854}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: f2533fa541e2dc046b10f99429dc92da, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::MagazinePickup
   weaponType: {fileID: 11400000, guid: 45366b76c0d4b9847a2f16a9d4bec283, type: 2}
---- !u!1001 &8678951862095443654
+--- !u!114 &2401851803100861920
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6561682006409702854}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4e85e35134ec8c74d95b2c7b733240e4, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Outlinable
+  outlineColor: {r: 1, g: 1, b: 1, a: 1}
+  outlineWidth: 0.1
+  outlineShader: {fileID: 0}
+--- !u!1001 &6724982511640311538
 PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
     serializedVersion: 3
-    m_TransformParent: {fileID: 805591600244897436}
+    m_TransformParent: {fileID: 7206936065672909876}
     m_Modifications:
     - target: {fileID: -8679921383154817045, guid: e58d3fe57a2ef8d48ba6106b2f983473, type: 3}
       propertyPath: m_LocalPosition.x
@@ -116,17 +132,29 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 90
       objectReference: {fileID: 0}
+    - target: {fileID: -231537852577957333, guid: e58d3fe57a2ef8d48ba6106b2f983473, type: 3}
+      propertyPath: m_Layer
+      value: 11
+      objectReference: {fileID: 0}
     - target: {fileID: 919132149155446097, guid: e58d3fe57a2ef8d48ba6106b2f983473, type: 3}
       propertyPath: m_Name
       value: glock magazine
+      objectReference: {fileID: 0}
+    - target: {fileID: 919132149155446097, guid: e58d3fe57a2ef8d48ba6106b2f983473, type: 3}
+      propertyPath: m_Layer
+      value: 11
+      objectReference: {fileID: 0}
+    - target: {fileID: 4823901923876677908, guid: e58d3fe57a2ef8d48ba6106b2f983473, type: 3}
+      propertyPath: m_Layer
+      value: 11
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: e58d3fe57a2ef8d48ba6106b2f983473, type: 3}
---- !u!4 &9222085338545295661 stripped
+--- !u!4 &6546358691610071321 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: e58d3fe57a2ef8d48ba6106b2f983473, type: 3}
-  m_PrefabInstance: {fileID: 8678951862095443654}
+  m_PrefabInstance: {fileID: 6724982511640311538}
   m_PrefabAsset: {fileID: 0}

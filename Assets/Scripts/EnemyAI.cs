@@ -521,8 +521,8 @@ public class EnemyAI : MonoBehaviour
         navAgent.isStopped = false;
         navAgent.speed = GetRunSpeed();
 
-        // Si tenemos arma con balas, cambiar a combate a distancia
-        if (inventory.HasWeapon && inventory.EquippedWeapon.currentBullets > 0)
+        // Si tenemos arma con balas en el cargador (o en reserva para recargar), cambiar a combate
+        if (inventory.HasWeapon && (!inventory.EquippedWeapon.MagazineEmpty || inventory.EquippedWeapon.HasReserve))
         {
             SetState(AIState.CombatEngaged);
             return;
@@ -545,10 +545,23 @@ public class EnemyAI : MonoBehaviour
     /// </summary>
     private void UpdateCombatEngaged()
     {
-        // Si ya no tenemos arma o balas, volver a persecución cuerpo a cuerpo
-        if (!inventory.HasWeapon || inventory.EquippedWeapon.currentBullets <= 0)
+        // Sin arma: volver a persecución
+        if (!inventory.HasWeapon)
         {
             SetState(AIState.Chasing);
+            return;
+        }
+
+        WeaponData weapon = inventory.EquippedWeapon;
+
+        // Cargador vacío con reserva → recargar antes de seguir
+        if (weapon.MagazineEmpty)
+        {
+            if (weapon.HasReserve && !inventory.IsReloading)
+                inventory.StartReload();
+            else if (!weapon.HasReserve)
+                SetState(AIState.Chasing);
+            // No disparar mientras recargamos — simplemente esperar
             return;
         }
 
@@ -622,7 +635,7 @@ public class EnemyAI : MonoBehaviour
     /// </summary>
     private void TryShootAtPlayer()
     {
-        if (!inventory.HasWeapon || inventory.EquippedWeapon.currentBullets <= 0)
+        if (!inventory.HasWeapon || inventory.EquippedWeapon.MagazineEmpty)
             return;
 
         Vector3 eyePosition  = transform.position + Vector3.up * 1f;
@@ -853,8 +866,8 @@ public class EnemyAI : MonoBehaviour
     private void EvaluateAndSetBestTarget()
     {
         bool hasWeapon = inventory.HasWeapon;
-        bool hasAmmo = hasWeapon && inventory.EquippedWeapon.currentBullets > 0;
-        bool needsAmmo = hasWeapon && inventory.EquippedWeapon.currentBullets < inventory.EquippedWeapon.weaponType.maxBullets;
+        bool hasAmmo   = hasWeapon && !inventory.EquippedWeapon.MagazineEmpty;
+        bool needsAmmo = hasWeapon && inventory.EquippedWeapon.bulletsInMagazine < inventory.EquippedWeapon.weaponType.magazineSize;
         
         // Buscar items visibles (usando cono de visión)
         Transform bestWeapon = null;
@@ -941,8 +954,17 @@ public class EnemyAI : MonoBehaviour
         }
         else if (!hasAmmo)
         {
-            // CON ARMA SIN BALAS: Cargador > Arma con balas > Jugador > Ruta
-            if (bestMagazine != null)
+            // CON ARMA SIN BALAS EN CARGADOR
+            bool hasReserve = inventory.HasWeapon && inventory.EquippedWeapon.HasReserve;
+
+            if (hasReserve && CanSeePlayer)
+            {
+                // Puede recargar: ir a CombatEngaged (allí gestionará la recarga)
+                newPriority = TargetPriority.Player;
+                newTarget   = playerTransform;
+                newState    = AIState.CombatEngaged;
+            }
+            else if (bestMagazine != null)
             {
                 newPriority = TargetPriority.Magazine;
                 newTarget = bestMagazine;

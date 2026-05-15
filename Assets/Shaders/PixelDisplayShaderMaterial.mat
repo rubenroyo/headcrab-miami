@@ -28,6 +28,10 @@ Material:
         m_Texture: {fileID: 8400000, guid: 4888692256264c144995bc3c000c82ed, type: 2}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
+    - _Bayer_4x4:
+        m_Texture: {fileID: 2800000, guid: d09c5cdf36331dc4da29ee820803d25f, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     - _BumpMap:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
@@ -49,7 +53,7 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _Dither_Texture:
-        m_Texture: {fileID: 2800000, guid: bd8faa330fdcadb4699671f7ce8998e5, type: 3}
+        m_Texture: {fileID: 2800000, guid: b426efebb8916e944b00b59020d71131, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _EmissionMap:
@@ -69,7 +73,7 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _Palette:
-        m_Texture: {fileID: 2800000, guid: 5c5ae714051ec554a9de778f3e750ffe, type: 3}
+        m_Texture: {fileID: 2800000, guid: 28edfadce623e2e4ab388f1b25635a76, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _ParallaxMap:
@@ -96,6 +100,10 @@ Material:
         m_Texture: {fileID: 8400000, guid: 4888692256264c144995bc3c000c82ed, type: 2}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
+    - baseColorTexture:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     - unity_Lightmaps:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
@@ -117,12 +125,14 @@ Material:
     - _BlendModePreserveSpecular: 1
     - _BlendOp: 0
     - _BrightenAmount: 0.3
-    - _Brightnes: 8
+    - _Brightnes: -0.01
     - _BumpScale: 1
+    - _CastShadows: 1
     - _ClearCoatMask: 0
     - _ClearCoatSmoothness: 0
     - _ColorMask: 15
     - _Cull: 2
+    - _CullMode: 2
     - _Cutoff: 0.5
     - _DarkenAmount: 0.85
     - _DebugMode: 0
@@ -132,7 +142,7 @@ Material:
     - _DepthThreshold: 1.5
     - _DetailAlbedoMapScale: 1
     - _DetailNormalMapScale: 1
-    - _Dither_Intensity: 9
+    - _Dither_Intensity: 0
     - _Dither_Opacity: 0
     - _DstBlend: 0
     - _DstBlendAlpha: 0
@@ -168,15 +178,20 @@ Material:
     - _StencilOp: 0
     - _StencilReadMask: 255
     - _StencilWriteMask: 255
+    - _Steps: 3
     - _Surface: 0
     - _UIMaskSoftnessX: 1
     - _UIMaskSoftnessY: 1
     - _UVSec: 0
     - _WorkflowMode: 1
     - _XRMotionVectorsPass: 1
+    - _ZTest: 4
     - _ZWrite: 1
+    - _ZWriteControl: 0
     - _quantization_level: 32
     - _saturation_levels: 5
+    - alphaCutoff: 0.5
+    - baseColorTexture_texCoord: 0
     m_Colors:
     - _BaseColor: {r: 1, g: 1, b: 1, a: 1}
     - _ClipRect: {r: 0, g: 0, b: 0, a: 0}
@@ -184,6 +199,8 @@ Material:
     - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}
     - _SpecColor: {r: 0.19999996, g: 0.19999996, b: 0.19999996, a: 1}
     - _SubPixelOffset: {r: 0, g: 0, b: 0, a: 0}
+    - baseColorFactor: {r: 1, g: 1, b: 1, a: 1}
+    - baseColorTexture_Rotation: {r: 0, g: 0, b: 0, a: 0}
   m_BuildTextureStacks: []
   m_AllowLocking: 1
 --- !u!114 &1692170526244892042

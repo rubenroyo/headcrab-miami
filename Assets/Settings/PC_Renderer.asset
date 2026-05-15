@@ -1,5 +1,37 @@
 %YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
+--- !u!114 &-6348157960789235426
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d4bafae41fae72b4f94e40734829b516, type: 3}
+  m_Name: XRayCapsuleFeature
+  m_EditorClassIdentifier: Assembly-CSharp::XRayCapsuleFeature
+  m_Active: 1
+  settings: {effectMaterial: {fileID: 2100000, guid: fa47e6f432b82bd42aba12851602a988, type: 2}, renderPassEvent: 300}
+--- !u!114 &-5763805436363840666
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: cd98259672820b64fa54a35c1cc269d6, type: 3}
+  m_Name: SelectionOutlineFeature
+  m_EditorClassIdentifier: Assembly-CSharp::SelectionOutlineFeature
+  m_Active: 1
+  settings:
+    renderPassEvent: 1000
+    outlineColor: {r: 1, g: 1, b: 1, a: 1}
+    blurRadius: 3
+    softness: 0.05
 --- !u!114 &11400000
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -27,7 +59,9 @@ MonoBehaviour:
   m_RendererFeatures:
   - {fileID: 7833122117494664109}
   - {fileID: 867500173736828056}
-  m_RendererFeatureMap: ad6b866f10d7b46c985c2cd2cffa090c
+  - {fileID: 3443424523499312242}
+  - {fileID: -5763805436363840666}
+  m_RendererFeatureMap: ad6b866f10d7b46c985c2cd2cffa090c72940b2e5c80c92f6663115b7ed902b0
   m_UseNativeRenderPass: 1
   xrSystemData: {fileID: 0}
   postProcessData: {fileID: 11400000, guid: 41439944d30ece34e96484bdb6645b55, type: 2}
@@ -44,12 +78,12 @@ MonoBehaviour:
   m_DefaultStencilState:
     overrideStencilState: 0
     stencilReference: 1
-    stencilCompareFunction: 3
+    stencilCompareFunction: 0
     passOperation: 2
     failOperation: 0
     zFailOperation: 0
   m_ShadowTransparentReceive: 1
-  m_RenderingMode: 2
+  m_RenderingMode: 1
   m_DepthPrimingMode: 1
   m_CopyDepthMode: 0
   m_DepthAttachmentFormat: 0
@@ -82,7 +116,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a752c68aa777dd146a938da9750f7994, type: 3}
   m_Name: PixelArtEdgeDetectionFeature
   m_EditorClassIdentifier: Assembly-CSharp::PixelArtEdgeDetectionFeature
-  m_Active: 1
+  m_Active: 0
   settings:
     edgeDetectionMaterial: {fileID: 2100000, guid: b7cf7f74683a5b742a124cca18b0cab7, type: 2}
     renderPassEvent: 550
@@ -97,6 +131,26 @@ MonoBehaviour:
     hueShiftAmount: 0.005
     depthEdgeColor: {r: 0, g: 0, b: 0, a: 1}
     normalEdgeColor: {r: 1, g: 1, b: 1, a: 1}
+--- !u!114 &3443424523499312242
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b00045f12942b46c698459096c89274e, type: 3}
+  m_Name: FullScreenPassRendererFeature
+  m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.FullScreenPassRendererFeature
+  m_Active: 0
+  injectionPoint: 600
+  fetchColorBuffer: 1
+  requirements: -1
+  passMaterial: {fileID: 2100000, guid: b28a23cfb993aa948a4dfd99f4e9a950, type: 2}
+  passIndex: 0
+  bindDepthStencilAttachment: 0
+  m_Version: 1
 --- !u!114 &7833122117494664109
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -109,7 +163,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f62c9c65cf3354c93be831c8bc075510, type: 3}
   m_Name: ScreenSpaceAmbientOcclusion
   m_EditorClassIdentifier: 
-  m_Active: 1
+  m_Active: 0
   m_Settings:
     AOMethod: 0
     Downsample: 0

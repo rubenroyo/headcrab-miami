@@ -13,8 +13,11 @@ MonoBehaviour:
   m_Name: Pistol
   m_EditorClassIdentifier: Assembly-CSharp::WeaponType
   weaponName: Pistol
+  weaponIcon: {fileID: 21300000, guid: 7845a269a88bdd7409fe1b9c4c11364b, type: 3}
+  magazineSize: 10
   bulletsPerMagazine: 12
   maxBullets: 36
+  reloadTime: 1.5
   fireRate: 0.5
   isAutomatic: 0
   damage: 30
@@ -34,7 +37,7 @@ MonoBehaviour:
   tracerDuration: 0.067
   pickupPrefab: {fileID: 9109955285980595624, guid: cf9e81af56c063846a34ccfb3e033fd2, type: 3}
   equippedPrefab: {fileID: 919132149155446097, guid: 5fa2f4d6a37fcf14e9d5e32d88d03c90, type: 3}
-  magazinePickupPrefab: {fileID: 0}
+  magazinePickupPrefab: {fileID: 6561682006409702854, guid: 679832ff72c18b64d8023c07bd0d69c6, type: 3}
   fpsPrefab: {fileID: 8511208052594982854, guid: 3937f819e6835aa4d907acd07762d8dc, type: 3}
   fpsPositionOffset: {x: 0.6, y: -0.6, z: -0.6}
   fpsRotationOffset: {x: 0, y: 0, z: 0}

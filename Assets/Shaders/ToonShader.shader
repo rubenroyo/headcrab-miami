@@ -8,6 +8,9 @@ Shader "Custom/ToonShader"
         // Toon shading properties
         _ShadowSteps ("Shadow Steps", Range(2, 10)) = 3
         _AmbientStrength ("Ambient Strength", Range(0.0, 1.0)) = 0.2
+        
+        [HDR] _HighlightColor ("Highlight Color", Color) = (0,0,0,0)
+        _HighlightStrength ("Highlight Strength", Range(0.0, 1.0)) = 0
     }
     
     SubShader
@@ -56,6 +59,8 @@ Shader "Custom/ToonShader"
                 float4 _BaseColor;
                 float _ShadowSteps;
                 float _AmbientStrength;
+                float4 _HighlightColor;
+                float  _HighlightStrength;
             CBUFFER_END
             
             Varyings vert(Attributes input)
@@ -104,6 +109,9 @@ Shader "Custom/ToonShader"
                 
                 // Final color: albedo * (direct light + ambient)
                 float3 finalColor = albedo.rgb * (lighting + ambient);
+                
+                // Possession highlight: lerp hacia color plano sobre cualquier textura
+                finalColor = lerp(finalColor, _HighlightColor.rgb, _HighlightStrength);
                 
                 return float4(finalColor, albedo.a);
             }

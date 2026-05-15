@@ -21,6 +21,9 @@ public class CinemachineCameraController : MonoBehaviour
     [Tooltip("Cámara siguiendo al enemigo poseído")]
     [SerializeField] private CinemachineCamera vcamPossession;
     
+    [Tooltip("Cámara de seguimiento durante el viaje de posesión (antes de entrar a primera persona)")]
+    [SerializeField] private CinemachineCamera vcamFollowPossession;
+    
     [Header("Priority Settings")]
     [Tooltip("Prioridad de la cámara activa")]
     [SerializeField] private int activePriority = 20;
@@ -100,6 +103,7 @@ public class CinemachineCameraController : MonoBehaviour
         Normal,
         Aiming,
         Jumping,
+        FollowingPossession,
         Possessing
     }
     
@@ -166,6 +170,7 @@ public class CinemachineCameraController : MonoBehaviour
         EnsureImpulseListener(vcamAim);
         EnsureImpulseListener(vcamJump);
         EnsureImpulseListener(vcamPossession);
+        EnsureImpulseListener(vcamFollowPossession);
         
         // Buscar controller de lag en vcamJump
         if (vcamJump != null)
@@ -450,6 +455,27 @@ public class CinemachineCameraController : MonoBehaviour
     }
     
     /// <summary>
+    /// Activar cámara de seguimiento durante el viaje de posesión (antes de primera persona).
+    /// Llamar desde PlayerController.EnterPossessingTravel().
+    /// </summary>
+    public void EnterFollowPossessionMode(Transform enemyTarget)
+    {
+        if (vcamFollowPossession == null)
+        {
+            Debug.LogWarning("[CinemachineCamera] vcamFollowPossession no asignado — saltar transición de viaje");
+            return;
+        }
+
+        currentState = CameraState.FollowingPossession;
+
+        vcamFollowPossession.Follow = enemyTarget;
+        vcamFollowPossession.LookAt = enemyTarget;
+
+        SwitchToCamera(vcamFollowPossession);
+        Debug.Log($"[CinemachineCamera] EnterFollowPossessionMode — siguiendo a {enemyTarget?.name}");
+    }
+
+    /// <summary>
     /// Entrar en modo posesión - PRIMERA PERSONA instantánea a la altura de los ojos
     /// </summary>
     public void EnterPossessionMode(Transform enemyTarget)
@@ -662,7 +688,7 @@ public class CinemachineCameraController : MonoBehaviour
         SetTarget(newTarget);
         
         // Forzar posición inmediata en todas las cámaras
-        foreach (var vcam in new[] { vcamThirdPerson, vcamAim, vcamJump, vcamPossession })
+        foreach (var vcam in new[] { vcamThirdPerson, vcamAim, vcamJump, vcamPossession, vcamFollowPossession })
         {
             if (vcam != null)
             {
@@ -748,6 +774,7 @@ public class CinemachineCameraController : MonoBehaviour
         if (vcamAim != null) vcamAim.Priority = inactivePriority;
         if (vcamJump != null) vcamJump.Priority = inactivePriority;
         if (vcamPossession != null) vcamPossession.Priority = inactivePriority;
+        if (vcamFollowPossession != null) vcamFollowPossession.Priority = inactivePriority;
     }
     
     private void SetAllTargets(Transform target)

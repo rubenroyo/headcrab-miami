@@ -275,4 +275,21 @@ public class PlayerAnimatorController : MonoBehaviour
     {
         PlayBurst(groundPoundSmokePS);
     }
+
+    // ─────────────────────────────────────────────
+    //  POSESIÓN — apuntado
+    // ─────────────────────────────────────────────
+
+    private static readonly int IsAimingPossessionHash = Animator.StringToHash("isAimingPossession");
+
+    /// <summary>
+    /// Activa o desactiva el estado de apuntado de posesión en el Animator.
+    /// El Animator debe tener un parámetro bool llamado "isAimingPossession" y
+    /// una transición Idle → AimPossession (con Exit Time = 0) y la vuelta.
+    /// </summary>
+    public void SetAimingPossession(bool aiming)
+    {
+        if (animator == null) return;
+        animator.SetBool(IsAimingPossessionHash, aiming);
+    }
 }

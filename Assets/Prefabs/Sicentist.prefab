@@ -911,6 +911,7 @@ Transform:
   - {fileID: 4127564311951716797}
   - {fileID: 8386852967101154863}
   - {fileID: 3620940800548195066}
+  - {fileID: 1470562787759758281}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 360, z: 0}
 --- !u!136 &4654688189711972699
@@ -967,9 +968,11 @@ MonoBehaviour:
   maxHealth: 100
   currentHealth: 100
   equippedWeapon:
-    weaponType: {fileID: 11400000, guid: 9a5ef5a45962a7646bcded7801cb6159, type: 2}
-    currentBullets: 99
+    weaponType: {fileID: 0}
+    bulletsInMagazine: 0
+    reserveBullets: 0
   weaponAnchor: {fileID: 0}
+  weaponDropPoint: {fileID: 1470562787759758281}
 --- !u!195 &5378780275454451096
 NavMeshAgent:
   m_ObjectHideFlags: 0
@@ -1040,7 +1043,7 @@ MonoBehaviour:
   showVisionCone: 0
   visionConeColor: {r: 1, g: 0, b: 0, a: 0.3}
   visionConeSegments: 20
-  defaultBehavior: 0
+  defaultBehavior: 2
   searchDuration: 5
   wanderRadius: 10
   wanderInterval: 3
@@ -1322,6 +1325,37 @@ Transform:
   m_Children:
   - {fileID: 7084738162492096471}
   m_Father: {fileID: 248403280811649216}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &7763614083893499838
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1470562787759758281}
+  m_Layer: 0
+  m_Name: WeaponDropPoint
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1470562787759758281
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7763614083893499838}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 1.6, z: 1}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1986356251355242636}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &7981824332876875923
 GameObject:
