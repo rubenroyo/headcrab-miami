@@ -16,8 +16,21 @@ public class FirstPersonPossessionController : MonoBehaviour
     [SerializeField] private float maxPitch = 80f;
     
     [Header("Smoothing (optional)")]
-    [SerializeField] private bool enableSmoothing = false;
-    [SerializeField] private float smoothTime = 0.05f;
+    [SerializeField] private bool enableSmoothing = true;
+    [Tooltip("Cu\u00e1nto tarda la c\u00e1mara en alcanzar la velocidad del rat\u00f3n (segundos). "
+           + "M\u00e1s alto = m\u00e1s inercia al arrancar. 0 = instant\u00e1neo.")]
+    [SerializeField] private float accelerationTime = 0.04f;
+    [Tooltip("Cu\u00e1nto tarda la c\u00e1mara en detenerse cuando el rat\u00f3n para (segundos). "
+           + "M\u00e1s alto = m\u00e1s deriva al soltar. 0 = parada instant\u00e1nea.")]
+    [SerializeField] private float decelerationTime = 0.08f;
+    
+    [Header("Camera Tilt (Sprint + Strafe)")]
+    [Tooltip("Ángulo máximo de inclinación lateral de la cámara (grados)")]
+    [SerializeField] private float tiltMaxAngle = 5f;
+    [Tooltip("Velocidad de interpolación de la inclinación (mayor = más rápido)")]
+    [SerializeField] private float tiltSpeed = 5f;
+    [Tooltip("Solo inclinar cuando el jugador está corriendo (Shift)")]
+    [SerializeField] private bool tiltOnlyWhileSprinting = true;
     
     // Estado interno
     private bool isActive = false;
@@ -26,6 +39,7 @@ public class FirstPersonPossessionController : MonoBehaviour
     
     private float currentYaw = 0f;
     private float currentPitch = 0f;
+    private float currentRoll = 0f;
     
     // Smoothing
     private float yawVelocity = 0f;
@@ -90,7 +104,19 @@ public class FirstPersonPossessionController : MonoBehaviour
         if (!isActive || possessedTarget == null) return;
         
         HandleMouseLook();
+        UpdateTilt();
         ApplyRotations();
+    }
+    
+    private void UpdateTilt()
+    {
+        float h = Input.GetAxisRaw("Horizontal");
+        bool isSprinting = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+        
+        bool shouldTilt = !tiltOnlyWhileSprinting || isSprinting;
+        float targetRoll = shouldTilt ? -h * tiltMaxAngle : 0f;
+        
+        currentRoll = Mathf.Lerp(currentRoll, targetRoll, tiltSpeed * Time.unscaledDeltaTime);
     }
     
     private void HandleMouseLook()
@@ -105,9 +131,13 @@ public class FirstPersonPossessionController : MonoBehaviour
             targetYaw += mouseX;
             targetPitch -= mouseY; // Invertido: mover ratón arriba = mirar arriba
             targetPitch = Mathf.Clamp(targetPitch, minPitch, maxPitch);
-            
-            currentYaw = Mathf.SmoothDamp(currentYaw, targetYaw, ref yawVelocity, smoothTime);
-            currentPitch = Mathf.SmoothDamp(currentPitch, targetPitch, ref pitchVelocity, smoothTime);
+
+            // Aceleración cuando el ratón se mueve, deceleración cuando para
+            float yawSmooth   = Mathf.Abs(mouseX) > 0.001f ? accelerationTime : decelerationTime;
+            float pitchSmooth = Mathf.Abs(mouseY) > 0.001f ? accelerationTime : decelerationTime;
+
+            currentYaw   = Mathf.SmoothDamp(currentYaw,   targetYaw,   ref yawVelocity,   yawSmooth,   Mathf.Infinity, Time.unscaledDeltaTime);
+            currentPitch = Mathf.SmoothDamp(currentPitch, targetPitch, ref pitchVelocity, pitchSmooth, Mathf.Infinity, Time.unscaledDeltaTime);
         }
         else
         {
@@ -128,10 +158,10 @@ public class FirstPersonPossessionController : MonoBehaviour
             possessedTarget.rotation = Quaternion.Euler(0f, currentYaw, 0f);
         }
         
-        // Aplicar pitch al punto de ojos (rotación vertical solo de la "cabeza"/cámara)
+        // Aplicar pitch y roll al punto de ojos (rotación vertical + inclinación lateral de la cámara)
         if (eyePoint != null)
         {
-            eyePoint.localRotation = Quaternion.Euler(currentPitch, 0f, 0f);
+            eyePoint.localRotation = Quaternion.Euler(currentPitch, 0f, currentRoll);
         }
     }
     
@@ -188,6 +218,7 @@ public class FirstPersonPossessionController : MonoBehaviour
         targetYaw = yaw;
         currentPitch = Mathf.Clamp(pitch, minPitch, maxPitch);
         targetPitch = currentPitch;
+        currentRoll = 0f;
         
         ApplyRotations();
     }

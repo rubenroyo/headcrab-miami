@@ -101,6 +101,17 @@ public class WeaponType : ScriptableObject
     [Tooltip("Rotación del modelo FPS")]
     public Vector3 fpsRotationOffset = Vector3.zero;
 
+    [Header("ADS — Apuntado (FPS)")]
+    [Tooltip("Posición del modelo cuando apunta (relativa al eye point). " +
+             "Normalmente centrado y más cercano a la cámara.")]
+    public Vector3 adsPositionOffset = new Vector3(0f, -0.2f, 0.35f);
+
+    [Tooltip("Rotación del modelo cuando apunta.")]
+    public Vector3 adsRotationOffset = Vector3.zero;
+
+    [Tooltip("Duración en segundos de la transición al apuntar y al soltar.")]
+    public float adsTransitionDuration = 0.15f;
+
     [Header("Recoil (Retroceso FPS)")]
     [Tooltip("Ángulo de rotación del retroceso en el eje Z (hacia arriba)")]
     public float recoilAngle = 15f;

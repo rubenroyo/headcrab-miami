@@ -19,6 +19,17 @@ public class HitReactionController : MonoBehaviour
              "Más daño → más fuerza, menos → menos (clamp 0.5×–4×).")]
     [SerializeField] private float damageReference = 30f;
 
+    [Header("Hit Reaction — Animación")]
+    [Tooltip("Altura desde transform.position por encima de la cual se considera zona de cabeza. " +
+             "Ajusta según la escala del modelo (ej. 1.5 para un humano de 1.8 m).")]
+    [SerializeField] private float headHeightThreshold = 1.5f;
+
+    // Triggers del Animator (nombre exacto debe coincidir con el Animator Controller)
+    private static readonly int TriggerHitBody  = Animator.StringToHash("HitBody");
+    private static readonly int TriggerHitHead  = Animator.StringToHash("HitHead");
+    private static readonly int TriggerHitRight = Animator.StringToHash("HitRight");
+    private static readonly int TriggerHitLeft  = Animator.StringToHash("HitLeft");
+
     private Rigidbody[] ragdollBodies;
     private Animator    animator;
 
@@ -35,6 +46,17 @@ public class HitReactionController : MonoBehaviour
     // ─────────────────────────────────────────────
     //  API PÚBLICA
     // ─────────────────────────────────────────────
+
+    /// <summary>
+    /// Reproduce la animación de impacto adecuada según la dirección del disparo.
+    /// Prioridad: cabeza (por posición del hit) > por detrás > lateral > frontal.
+    /// </summary>
+    public void TriggerHitAnimation(Vector3 hitPoint, Vector3 hitDirection)
+    {
+        if (animator == null || !animator.enabled) return;
+
+        animator.SetTrigger(SelectHitTrigger(hitPoint, hitDirection));
+    }
 
     /// <summary>
     /// Activa el ragdoll completo al morir.
@@ -66,6 +88,31 @@ public class HitReactionController : MonoBehaviour
     // ─────────────────────────────────────────────
     //  PRIVADO
     // ─────────────────────────────────────────────
+
+    private int SelectHitTrigger(Vector3 hitPoint, Vector3 hitDirection)
+    {
+        // 1. Zona de cabeza: el hit point está por encima del threshold
+        if (hitPoint.y >= transform.position.y + headHeightThreshold)
+            return TriggerHitHead;
+
+        // Convertir la dirección de la bala al espacio local del enemigo.
+        // El atacante viene de la dirección OPUESTA a hitDirection.
+        Vector3 localDir = transform.InverseTransformDirection(-hitDirection.normalized);
+
+        float absX = Mathf.Abs(localDir.x);
+        float absZ = Mathf.Abs(localDir.z);
+
+        // 2. Desde detrás (localDir.z < 0 y domina sobre X)
+        if (localDir.z < 0f && absZ >= absX)
+            return TriggerHitHead;
+
+        // 3. Lateral: X domina sobre Z
+        if (absX >= absZ)
+            return localDir.x > 0f ? TriggerHitRight : TriggerHitLeft;
+
+        // 4. Frontal (localDir.z > 0)
+        return TriggerHitBody;
+    }
 
     private Rigidbody FindClosestBone(Vector3 point)
     {

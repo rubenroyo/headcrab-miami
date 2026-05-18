@@ -129,7 +129,7 @@ public class WeaponPickup : MonoBehaviour
     public bool PickUpByAI(InventoryHolder inventory)
     {
         if (!CanBePickedUp || inventory == null) return false;
-        PickUpInternal(inventory, inventory.WeaponDropPoint);
+        PickUpInternal(inventory);
         return true;
     }
 
@@ -137,17 +137,17 @@ public class WeaponPickup : MonoBehaviour
     /// Recogida por el jugador poseído. Solo funciona si el inventory está en el radio.
     /// Llamar desde PlayerController cuando se pulsa E.
     /// </summary>
-    public bool PickUpByPlayer(InventoryHolder inventory, Transform dropPoint)
+    public bool PickUpByPlayer(InventoryHolder inventory, Transform _dropPoint = null)
     {
         if (!CanBePickedUp) return false;
         if (!nearbyInventories.Contains(inventory)) return false;
-        PickUpInternal(inventory, dropPoint);
+        PickUpInternal(inventory);
         return true;
     }
 
     // ── Lógica interna ───────────────────────────────────────────────────
 
-    private void PickUpInternal(InventoryHolder inventory, Transform dropPoint)
+    private void PickUpInternal(InventoryHolder inventory)
     {
         // Construir WeaponData con el estado de munición exacto
         WeaponData newWeapon = new WeaponData(weaponType, 0);
@@ -157,14 +157,10 @@ public class WeaponPickup : MonoBehaviour
         // Equipar — devuelve el arma anterior si había
         WeaponData previousWeapon = inventory.EquipWeapon(newWeapon);
 
-        // Si tenía arma, soltarla en el drop point con física
+        // Si tenía arma, soltarla delante del enemigo
         if (previousWeapon != null && previousWeapon.weaponType?.pickupPrefab != null)
         {
-            Vector3 spawnPos = dropPoint != null
-                ? dropPoint.position
-                : transform.position + Vector3.up * 0.3f;
-
-            SpawnDroppedWeapon(previousWeapon, spawnPos, inventory.transform.forward);
+            SpawnDroppedWeapon(previousWeapon, inventory.GetDropPosition(), inventory.transform.forward);
         }
 
         isPickedUp = true;
@@ -175,7 +171,7 @@ public class WeaponPickup : MonoBehaviour
     /// Instancia el prefab de pickup de un arma y le aplica física de tiro.
     /// Estático para que InventoryHolder.DropWeapon() también pueda usarlo.
     /// </summary>
-    public static GameObject SpawnDroppedWeapon(WeaponData weapon, Vector3 position, Vector3 throwDirection)
+    public static GameObject SpawnDroppedWeapon(WeaponData weapon, Vector3 position, Vector3 throwDirection, float throwForce = 8f)
     {
         if (weapon?.weaponType?.pickupPrefab == null) return null;
 
@@ -189,7 +185,7 @@ public class WeaponPickup : MonoBehaviour
         if (rb == null) rb = obj.AddComponent<Rigidbody>();
         rb.isKinematic = false;
         rb.linearDamping       = 0.5f;
-        rb.AddForce(throwDirection.normalized * 4f + Vector3.up * 2.5f, ForceMode.Impulse);
+        rb.AddForce(throwDirection.normalized * throwForce, ForceMode.Impulse);
         rb.AddTorque(Random.insideUnitSphere * 3f, ForceMode.Impulse);
 
         return obj;

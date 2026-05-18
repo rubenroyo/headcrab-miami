@@ -13,8 +13,11 @@ MonoBehaviour:
   m_Name: Shotgun
   m_EditorClassIdentifier: Assembly-CSharp::WeaponType
   weaponName: Shotgun
+  weaponIcon: {fileID: 21300000, guid: 3c243e595b16437429254b47ee5fcf9b, type: 3}
+  magazineSize: 10
   bulletsPerMagazine: 10
   maxBullets: 30
+  reloadTime: 1.5
   fireRate: 0.5
   isAutomatic: 0
   damage: 3
@@ -32,12 +35,15 @@ MonoBehaviour:
   aimingDispersionMultiplier: 0.5
   tracerPrefab: {fileID: 311309669414730574, guid: c7dca71ec907b46499067f07ef62512a, type: 3}
   tracerDuration: 0.067
-  pickupPrefab: {fileID: 0}
-  equippedPrefab: {fileID: 919132149155446097, guid: 5fa2f4d6a37fcf14e9d5e32d88d03c90, type: 3}
+  pickupPrefab: {fileID: 5069553140574743987, guid: 4da070388727ab24eb768cb74cabe82e, type: 3}
+  equippedPrefab: {fileID: 0}
   magazinePickupPrefab: {fileID: 0}
-  fpsPrefab: {fileID: 8511208052594982854, guid: 3937f819e6835aa4d907acd07762d8dc, type: 3}
-  fpsPositionOffset: {x: 0.6, y: -0.6, z: -0.6}
-  fpsRotationOffset: {x: 0, y: 0, z: 0}
+  fpsPrefab: {fileID: 4719057033236395892, guid: b5e1abf78e168dc42b65b42329e8b601, type: 3}
+  fpsPositionOffset: {x: 0.2, y: -0.8, z: 0}
+  fpsRotationOffset: {x: -15, y: 0, z: 0}
+  adsPositionOffset: {x: -0.4, y: -0.6, z: 0.35}
+  adsRotationOffset: {x: 0, y: 22.5, z: 0}
+  adsTransitionDuration: 0.1
   recoilAngle: 15
   recoilDuration: 0.05
   recoilRecoveryDuration: 0.15

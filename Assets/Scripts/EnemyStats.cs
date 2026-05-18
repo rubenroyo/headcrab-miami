@@ -28,4 +28,10 @@ public class EnemyStats : ScriptableObject
     [Tooltip("Temblor de pulso base del enemigo. 0 = puntería perfecta, ~2 = soldado nervioso.")]
     [Range(0f, 10f)]
     public float handTremor = 0.5f;
+
+    [Header("Aceleración y Desaceleración")]
+    [Tooltip("Aceleración al iniciar movimiento (unidades/s²). Aplica tanto a IA (NavMeshAgent) como a posesión.")]
+    public float acceleration = 18f;
+    [Tooltip("Desaceleración al soltar el input en posesión (unidades/s²).")]
+    public float deceleration = 24f;
 }

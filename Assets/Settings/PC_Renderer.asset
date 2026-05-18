@@ -60,8 +60,7 @@ MonoBehaviour:
   - {fileID: 7833122117494664109}
   - {fileID: 867500173736828056}
   - {fileID: 3443424523499312242}
-  - {fileID: -5763805436363840666}
-  m_RendererFeatureMap: ad6b866f10d7b46c985c2cd2cffa090c72940b2e5c80c92f6663115b7ed902b0
+  m_RendererFeatureMap: ad6b866f10d7b46c985c2cd2cffa090c72940b2e5c80c92f
   m_UseNativeRenderPass: 1
   xrSystemData: {fileID: 0}
   postProcessData: {fileID: 11400000, guid: 41439944d30ece34e96484bdb6645b55, type: 2}
@@ -166,12 +165,12 @@ MonoBehaviour:
   m_Active: 0
   m_Settings:
     AOMethod: 0
-    Downsample: 0
+    Downsample: 1
     AfterOpaque: 0
     Source: 1
     NormalSamples: 1
     Intensity: 0.4
-    DirectLightingStrength: 0.25
+    DirectLightingStrength: 0
     Radius: 0.3
     Samples: 1
     BlurQuality: 0

@@ -57,6 +57,32 @@ public class EnemyController : MonoBehaviour
     /// </summary>
     public EnemyStats Stats => stats;
 
+    /// <summary>
+    /// Dirección de mirada real: forward del eye point (incluye pitch) si está poseído,
+    /// o forward del cuerpo si no lo está.
+    /// </summary>
+    public Vector3 LookDirection
+    {
+        get
+        {
+            if (!isPossessed) return transform.forward;
+            Transform eye = transform.Find("EyePoint") ?? transform.Find("_PossessionEyePoint");
+            return eye != null ? eye.forward : transform.forward;
+        }
+    }
+
+    /// <summary>
+    /// Posición del eye point. Fallback a la cabeza (transform + altura stats) si no hay eye point.
+    /// </summary>
+    public Vector3 EyePosition
+    {
+        get
+        {
+            Transform eye = transform.Find("EyePoint") ?? transform.Find("_PossessionEyePoint");
+            return eye != null ? eye.position : transform.position + Vector3.up * 1.6f;
+        }
+    }
+
     void Awake()
     {
         inventory = GetComponent<InventoryHolder>();
@@ -149,6 +175,8 @@ public class EnemyController : MonoBehaviour
 
         if (inventory.IsDead)
             Die(damage, hitPoint, hitDirection);
+        else if (hitReactionController != null)
+            hitReactionController.TriggerHitAnimation(hitPoint, hitDirection);
     }
 
     private void Die(float finalDamage, Vector3 hitPoint, Vector3 hitDirection)

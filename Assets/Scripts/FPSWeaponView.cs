@@ -30,10 +30,6 @@ public class FPSWeaponView : MonoBehaviour
     [Tooltip("Rotación máxima (grados)")]
     [SerializeField] private float maxSwayRotation = 8f;
     
-    [Header("ADS (Apuntado)")]
-    [Tooltip("Velocidad de transición al apuntar")]
-    [SerializeField] private float adsTransitionSpeed = 10f;
-    
     // Estado de movimiento
     private bool isActive = false;
     private bool isSprinting = false;
@@ -42,13 +38,20 @@ public class FPSWeaponView : MonoBehaviour
     private float bobTimer = 0f;
     private Vector3 baseLocalPosition;
     private Quaternion baseLocalRotation;
-    private Vector3 adsLocalPosition;  // Posición centrada para apuntar
+    private Vector3 adsLocalPosition;       // Posición cuando apunta (del WeaponType)
+    private Quaternion adsLocalRotation;    // Rotación cuando apunta (del WeaponType)
+    private float adsTransitionSpeed = 10f; // Derivado de WeaponType.adsTransitionDuration
     
     // Estado de sway
     private Vector2 currentSway = Vector2.zero;
     private float currentSwayRotationZ = 0f;
     
-    // Estado de recoil
+    // Animator del prefab FPS (opcional — si el prefab tiene Animator usa animaciones reales)
+    private Animator weaponAnimator;
+    private static readonly int AnimTriggerShoot  = Animator.StringToHash("Shoot");
+    private static readonly int AnimTriggerReload = Animator.StringToHash("Reload");
+
+    // Estado de recoil (solo se usa cuando NO hay Animator)
     private bool isRecoiling = false;
     private float recoilTimer = 0f;
     private float currentRecoilAngle = 0f;
@@ -70,10 +73,11 @@ public class FPSWeaponView : MonoBehaviour
             CreateFPSWeapon();
         }
         
-        // Suscribirse a cambios de arma
+        // Suscribirse a cambios de arma y a inicio de recarga
         if (inventoryHolder != null)
         {
-            inventoryHolder.OnWeaponChanged += OnWeaponChanged;
+            inventoryHolder.OnWeaponChanged  += OnWeaponChanged;
+            inventoryHolder.OnReloadStarted  += OnReloadStarted;
         }
         
         isActive = true;
@@ -89,7 +93,8 @@ public class FPSWeaponView : MonoBehaviour
         // Desuscribirse
         if (inventoryHolder != null)
         {
-            inventoryHolder.OnWeaponChanged -= OnWeaponChanged;
+            inventoryHolder.OnWeaponChanged  -= OnWeaponChanged;
+            inventoryHolder.OnReloadStarted  -= OnReloadStarted;
         }
         
         DestroyFPSWeapon();
@@ -117,7 +122,8 @@ public class FPSWeaponView : MonoBehaviour
     }
     
     /// <summary>
-    /// Inicia la animación de recoil (retroceso al disparar)
+    /// Dispara la animación de disparo. Si el prefab tiene Animator usa el trigger "Shoot";
+    /// si no, aplica el recoil procedural.
     /// </summary>
     public void PlayRecoil()
     {
@@ -126,7 +132,14 @@ public class FPSWeaponView : MonoBehaviour
             Debug.LogWarning($"[FPSWeaponView] PlayRecoil ignorado: isActive={isActive}, fpsWeaponInstance={(fpsWeaponInstance != null)}");
             return;
         }
-        
+
+        if (weaponAnimator != null)
+        {
+            weaponAnimator.SetTrigger(AnimTriggerShoot);
+            return;
+        }
+
+        // Fallback: recoil procedural (armas sin Animator)
         isRecoiling = true;
         isRecovering = false;
         recoilTimer = 0f;
@@ -177,24 +190,50 @@ public class FPSWeaponView : MonoBehaviour
         baseLocalPosition = fpsWeaponInstance.transform.localPosition;
         baseLocalRotation = fpsWeaponInstance.transform.localRotation;
         
-        // Calcular posición ADS (centrada, X=0)
-        adsLocalPosition = new Vector3(0f, baseLocalPosition.y, baseLocalPosition.z);
+        // Leer posición y rotación ADS del WeaponType
+        adsLocalPosition = weaponType.adsPositionOffset;
+        adsLocalRotation = Quaternion.Euler(weaponType.adsRotationOffset);
+        adsTransitionSpeed = weaponType.adsTransitionDuration > 0.001f
+            ? 1f / weaponType.adsTransitionDuration
+            : 999f;
         
         // Guardar parámetros de recoil del WeaponType
         targetRecoilAngle = weaponType.recoilAngle;
         recoilDuration = weaponType.recoilDuration;
         recoilRecoveryDuration = weaponType.recoilRecoveryDuration;
+
+        // Cachear Animator si el prefab lo tiene (animaciones reales)
+        weaponAnimator = fpsWeaponInstance.GetComponentInChildren<Animator>();
+        if (weaponAnimator != null)
+            Debug.Log($"[FPSWeaponView] Animator encontrado en {weaponType.weaponName}: usando animaciones reales.");
+
+        // Registrar el WeaponVisual del prefab FPS como muzzle override en InventoryHolder
+        var fpsVisual = fpsWeaponInstance.GetComponent<WeaponVisual>();
+        inventoryHolder.SetFPSWeaponVisualOverride(fpsVisual);
+        if (fpsVisual == null)
+            Debug.LogWarning($"[FPSWeaponView] {weaponType.weaponName}: el fpsPrefab no tiene WeaponVisual — muzzle point no actualizado.");
         
         Debug.Log($"[FPSWeaponView] Created FPS weapon: {weaponType.weaponName}");
     }
     
     private void DestroyFPSWeapon()
     {
+        // Limpiar el muzzle override antes de destruir el prefab
+        if (inventoryHolder != null)
+            inventoryHolder.SetFPSWeaponVisualOverride(null);
+
         if (fpsWeaponInstance != null)
         {
             Destroy(fpsWeaponInstance);
             fpsWeaponInstance = null;
         }
+        weaponAnimator = null;
+    }
+
+    private void OnReloadStarted()
+    {
+        if (!isActive || weaponAnimator == null) return;
+        weaponAnimator.SetTrigger(AnimTriggerReload);
     }
     
     private void OnWeaponChanged(WeaponData newWeapon)
@@ -256,7 +295,7 @@ public class FPSWeaponView : MonoBehaviour
         // Combinar posición base + bob + sway
         Vector3 targetPos = currentBasePos + bobOffset + swayOffset;
         
-        // Interpolar suavemente hacia la posición objetivo (más suave para ADS)
+        // Interpolar suavemente hacia la posición objetivo (ADS usa su propia velocidad)
         float lerpSpeed = isADS ? adsTransitionSpeed : 15f;
         fpsWeaponInstance.transform.localPosition = Vector3.Lerp(
             fpsWeaponInstance.transform.localPosition,
@@ -270,10 +309,14 @@ public class FPSWeaponView : MonoBehaviour
         {
             float rotMultiplier = isADS ? 0.2f : 1f;
             Quaternion swayRotation = Quaternion.Euler(0f, 0f, currentSwayRotationZ * rotMultiplier);
+            // ADS: interpolar hacia adsLocalRotation; normal: hacia baseLocalRotation
+            Quaternion targetRot = isADS
+                ? adsLocalRotation * swayRotation
+                : baseLocalRotation * swayRotation;
             fpsWeaponInstance.transform.localRotation = Quaternion.Slerp(
                 fpsWeaponInstance.transform.localRotation,
-                baseLocalRotation * swayRotation,
-                Time.deltaTime * swaySmooth
+                targetRot,
+                Time.deltaTime * lerpSpeed
             );
         }
     }

@@ -20,14 +20,39 @@ public class InventoryHolder : MonoBehaviour
     [SerializeField] private Transform weaponAnchor;
 
     [Header("Drop del Arma")]
-    [Tooltip("Punto desde el que se instancia el pickup al soltar el arma. Créalo como hijo vacío del enemigo.")]
-    [SerializeField] private Transform weaponDropPoint;
+    [Tooltip("Distancia hacia delante desde la que se suelta el arma.")]
+    [SerializeField] private float dropForwardOffset = 0.7f;
+    [Tooltip("Altura del punto de drop relativa al origen del enemigo.")]
+    [SerializeField] private float dropHeightOffset = 0.5f;
+    [Tooltip("Fuerza de lanzamiento al soltar el arma.")]
+    [SerializeField] private float dropThrowForce = 8f;
 
-    public Transform WeaponDropPoint => weaponDropPoint;
+    /// Posición dinámica de drop: origen en el eye point, sigue la dirección de mirada real (incluye pitch al poseer).
+    public Vector3 GetDropPosition()
+    {
+        Vector3 dir = enemyController != null ? enemyController.LookDirection : transform.forward;
+        Vector3 origin = enemyController != null ? enemyController.EyePosition : transform.position + Vector3.up * dropHeightOffset;
+        return origin + dir * dropForwardOffset;
+    }
+
+    private void OnDrawGizmos()
+    {
+        Gizmos.color = Color.red;
+        Gizmos.DrawSphere(GetDropPosition(), 0.1f);
+    }
 
     // Visual del arma equipada
     private GameObject equippedWeaponVisual;
     private WeaponVisual equippedWeaponVisualComponent;
+
+    // Override de muzzle para el prefab FPS (activo sólo mientras se posee al enemigo)
+    private WeaponVisual fpsWeaponVisualOverride;
+
+    /// <summary>
+    /// Llamado por FPSWeaponView al crear/destruir el prefab FPS.
+    /// Mientras esté asignado, GetMuzzlePosition/Forward usarán este muzzle.
+    /// </summary>
+    public void SetFPSWeaponVisualOverride(WeaponVisual v) => fpsWeaponVisualOverride = v;
 
     private float nextFireTime = 0f;
     private bool  isReloading  = false;
@@ -52,6 +77,8 @@ public class InventoryHolder : MonoBehaviour
     public System.Action<WeaponData>   OnWeaponChanged;
     /// <summary>Se dispara al cambiar las balas (magazine, reserva).</summary>
     public System.Action<int, int>     OnAmmoChanged;
+    /// <summary>Se dispara al inicio de la recarga (para animaciones FPS).</summary>
+    public System.Action               OnReloadStarted;
 
     void Awake()
     {
@@ -170,6 +197,7 @@ public class InventoryHolder : MonoBehaviour
     private IEnumerator ReloadCoroutine()
     {
         isReloading = true;
+        OnReloadStarted?.Invoke();
         yield return new WaitForSeconds(equippedWeapon.weaponType.reloadTime);
 
         if (HasWeapon) // puede haber soltado el arma durante la recarga
@@ -187,6 +215,10 @@ public class InventoryHolder : MonoBehaviour
 
     public Vector3 GetMuzzlePosition()
     {
+        // Prioridad máxima: muzzle del prefab FPS (sólo cuando se está poseído)
+        if (fpsWeaponVisualOverride != null && fpsWeaponVisualOverride.IsValid)
+            return fpsWeaponVisualOverride.MuzzlePosition;
+
         if (enemyController != null && enemyController.MuzzlePoint != null)
             return enemyController.MuzzlePoint.position;
 
@@ -201,6 +233,10 @@ public class InventoryHolder : MonoBehaviour
 
     public Vector3 GetMuzzleForward()
     {
+        // Prioridad máxima: muzzle del prefab FPS (sólo cuando se está poseído)
+        if (fpsWeaponVisualOverride != null && fpsWeaponVisualOverride.IsValid)
+            return fpsWeaponVisualOverride.MuzzleForward;
+
         if (equippedWeaponVisualComponent != null && equippedWeaponVisualComponent.IsValid)
             return equippedWeaponVisualComponent.MuzzleForward;
 
@@ -268,11 +304,10 @@ public class InventoryHolder : MonoBehaviour
 
         WeaponType type = equippedWeapon.weaponType;
 
-        Vector3 spawnPos = weaponDropPoint != null
-            ? weaponDropPoint.position
-            : transform.position + Vector3.up * 0.5f + transform.forward * 0.5f;
+        Vector3 spawnPos = GetDropPosition();
+        Vector3 throwDir = enemyController != null ? enemyController.LookDirection : transform.forward;
 
-        WeaponPickup.SpawnDroppedWeapon(equippedWeapon, spawnPos, transform.forward);
+        WeaponPickup.SpawnDroppedWeapon(equippedWeapon, spawnPos, throwDir, dropThrowForce);
 
         DestroyWeaponVisual();
         equippedWeapon = null;

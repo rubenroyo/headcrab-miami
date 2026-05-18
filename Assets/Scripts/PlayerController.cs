@@ -1026,7 +1026,7 @@ public class PlayerController : MonoBehaviour
         EnemyStats stats = possessedEnemy.Stats;
 
         isSprinting = (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift)) && !isAimingADS;
-        isAimingADS = Input.GetMouseButton(1) && !isSprinting;
+        isAimingADS = Input.GetMouseButton(1) && !isSprinting && !possessedEnemy.Inventory.IsReloading;
 
         // Sincroniza ADS con EnemyLocomotion a través de EnemyCombatActions
         possessedCombatActions.SetAiming(isAimingADS);
@@ -1060,7 +1060,16 @@ public class PlayerController : MonoBehaviour
 
         // Recarga manual con R
         if (Input.GetKeyDown(KeyCode.R))
+        {
+            // Cancelar ADS inmediatamente antes de recargar
+            if (isAimingADS)
+            {
+                isAimingADS = false;
+                possessedCombatActions.SetAiming(false);
+                if (cinemachineCamera != null) cinemachineCamera.SetADSState(false);
+            }
             possessedCombatActions.StartReload();
+        }
 
         // Interactuar con E (puerta o recoger ítem)
         if (Input.GetKeyDown(KeyCode.E))
@@ -1158,7 +1167,7 @@ public class PlayerController : MonoBehaviour
         if (doorWins)
             bestDoor.Interact();
         else if (bestWeapon != null && inventory != null)
-            bestWeapon.PickUpByPlayer(inventory, inventory.WeaponDropPoint);
+            bestWeapon.PickUpByPlayer(inventory);
     }
 
     /// <summary>

@@ -310,7 +310,7 @@ public class EnemyAI : MonoBehaviour
             ? enemyController.Stats.walkSpeed
             : moveSpeed;
         navAgent.angularSpeed = 0f; // Desactivar rotación automática del NavMesh
-        navAgent.acceleration = acceleration; // Aceleración instantánea
+        navAgent.acceleration = enemyController.Stats != null ? enemyController.Stats.acceleration : acceleration; // Desde EnemyStats
         navAgent.stoppingDistance = stoppingDistance;
         navAgent.updateRotation = false; // Rotación manual
         navAgent.updatePosition = true;

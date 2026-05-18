@@ -33,6 +33,17 @@ public class EnemyCombatActions : MonoBehaviour
     private NavMeshAgent     navAgent;
 
     // ─────────────────────────────────────────────
+    //  ACELERACIÓN (posesión — valores en EnemyStats)
+    // ─────────────────────────────────────────────
+
+    // Velocidad suavizada actual del enemigo poseído
+    private Vector3 smoothedVelocity = Vector3.zero;
+    // Velocidad objetivo marcada por Walk/Run/StopMoving en el frame actual
+    private Vector3 targetVelocity   = Vector3.zero;
+    // Estado de locomoción objetivo para el animator
+    private EnemyLocomotionState targetLocomotionState = EnemyLocomotionState.Idle;
+
+    // ─────────────────────────────────────────────
     //  INIT
     // ─────────────────────────────────────────────
 
@@ -42,6 +53,32 @@ public class EnemyCombatActions : MonoBehaviour
         locomotion      = GetComponent<EnemyLocomotion>();
         inventory       = GetComponent<InventoryHolder>();
         navAgent        = GetComponent<NavMeshAgent>();
+    }
+
+    void Update()
+    {
+        if (!enemyController.IsPossessed) return;
+
+        // Elegir tasa: aceleración si ganamos velocidad, desaceleración si la perdemos
+        float accel = enemyController.Stats != null ? enemyController.Stats.acceleration : 18f;
+        float decel = enemyController.Stats != null ? enemyController.Stats.deceleration : 24f;
+        float rate = targetVelocity.sqrMagnitude >= smoothedVelocity.sqrMagnitude ? accel : decel;
+
+        smoothedVelocity = Vector3.MoveTowards(smoothedVelocity, targetVelocity, rate * Time.deltaTime);
+
+        if (smoothedVelocity.sqrMagnitude > 0.0001f)
+            enemyController.Move(smoothedVelocity * Time.deltaTime);
+
+        // Sincronizar animator según la velocidad real, no el input
+        float currentSpeed = smoothedVelocity.magnitude;
+        if (currentSpeed < 0.05f)
+            locomotion.SetState(locomotion.IsAiming ? EnemyLocomotionState.Aiming : EnemyLocomotionState.Idle);
+        else
+            locomotion.SetState(targetLocomotionState);
+
+        // Resetear target para el siguiente frame (se reescribe si hay input)
+        targetVelocity        = Vector3.zero;
+        targetLocomotionState = EnemyLocomotionState.Idle;
     }
 
     // ─────────────────────────────────────────────
@@ -57,17 +94,20 @@ public class EnemyCombatActions : MonoBehaviour
         if (!CanMoveAsPlayer() && !CanMoveAsAI()) return;
 
         direction.y = 0f;
-        if (direction.sqrMagnitude < 0.001f)
+
+        // Posesión: registrar target, Update() aplica la aceleración
+        if (CanMoveAsPlayer())
         {
-            locomotion.SetState(EnemyLocomotionState.Idle);
+            float speed = enemyController.Stats != null ? enemyController.Stats.walkSpeed : 3f;
+            targetVelocity        = direction.sqrMagnitude > 0.001f ? direction.normalized * speed : Vector3.zero;
+            targetLocomotionState = EnemyLocomotionState.Walking;
             return;
         }
 
-        float speed = enemyController.Stats != null
-            ? enemyController.Stats.walkSpeed
-            : 3f;
-
-        enemyController.Move(direction.normalized * speed * Time.deltaTime);
+        // IA: movimiento directo (NavMeshAgent se encarga del suyo, este es fallback)
+        if (direction.sqrMagnitude < 0.001f) { locomotion.SetState(EnemyLocomotionState.Idle); return; }
+        float aiSpeed = enemyController.Stats != null ? enemyController.Stats.walkSpeed : 3f;
+        enemyController.Move(direction.normalized * aiSpeed * Time.deltaTime);
         locomotion.SetState(EnemyLocomotionState.Walking);
     }
 
@@ -80,22 +120,33 @@ public class EnemyCombatActions : MonoBehaviour
         if (!CanMoveAsPlayer() && !CanMoveAsAI()) return;
 
         direction.y = 0f;
-        if (direction.sqrMagnitude < 0.001f)
+
+        // Posesión: registrar target, Update() aplica la aceleración
+        if (CanMoveAsPlayer())
         {
-            locomotion.SetState(EnemyLocomotionState.Idle);
+            float speed = enemyController.Stats != null ? enemyController.Stats.runSpeed : 6f;
+            targetVelocity        = direction.sqrMagnitude > 0.001f ? direction.normalized * speed : Vector3.zero;
+            targetLocomotionState = EnemyLocomotionState.Running;
             return;
         }
 
-        float speed = enemyController.Stats != null
-            ? enemyController.Stats.runSpeed
-            : 6f;
-
-        enemyController.Move(direction.normalized * speed * Time.deltaTime);
+        // IA: movimiento directo
+        if (direction.sqrMagnitude < 0.001f) { locomotion.SetState(EnemyLocomotionState.Idle); return; }
+        float aiSpeed = enemyController.Stats != null ? enemyController.Stats.runSpeed : 6f;
+        enemyController.Move(direction.normalized * aiSpeed * Time.deltaTime);
         locomotion.SetState(EnemyLocomotionState.Running);
     }
 
     public void StopMoving()
     {
+        // Posesión: dejar targetVelocity a zero → Update() desacelera suavemente
+        if (CanMoveAsPlayer())
+        {
+            targetVelocity        = Vector3.zero;
+            targetLocomotionState = EnemyLocomotionState.Idle;
+            return;
+        }
+
         if (!locomotion.IsAiming)
             locomotion.SetState(EnemyLocomotionState.Idle);
     }
