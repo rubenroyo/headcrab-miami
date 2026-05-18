@@ -169,7 +169,7 @@ public class PossessionAimingSystem : MonoBehaviour
         for (int i = inRange.Count - 1; i >= 0; i--)
         {
             var ec = inRange[i];
-            if (ec == null || ec.IsDead ||
+            if (ec == null || ec.IsDead || ec.IsInjured ||
                 Vector3.Distance(transform.position, ec.transform.position) > possessionRange)
             {
                 ec?.SetPossessionHighlight(PossessionHighlightType.None);
@@ -181,7 +181,7 @@ public class PossessionAimingSystem : MonoBehaviour
         foreach (var col in hits)
         {
             var ec = col.GetComponentInParent<EnemyController>();
-            if (ec == null || !ec.CanBePossessed || ec.IsPossessed || ec.IsDead) continue;
+            if (ec == null || !ec.CanBePossessed || ec.IsPossessed || ec.IsDead || ec.IsInjured) continue;
             if (!inRange.Contains(ec))
                 inRange.Add(ec);
         }

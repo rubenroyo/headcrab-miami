@@ -56,7 +56,7 @@ Transform:
   m_GameObject: {fileID: 889180463057240708}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0.5, y: 1.2, z: 1}
+  m_LocalPosition: {x: 0, y: 1.3, z: 0.5}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -1463,7 +1463,7 @@ MonoBehaviour:
   maxHealth: 100
   currentHealth: 100
   equippedWeapon:
-    weaponType: {fileID: 11400000, guid: 33318aaf98678d34fbab656b62671187, type: 2}
+    weaponType: {fileID: 11400000, guid: 45366b76c0d4b9847a2f16a9d4bec283, type: 2}
     bulletsInMagazine: 10
     reserveBullets: 40
   weaponAnchor: {fileID: 0}
@@ -1529,11 +1529,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0a8843481f07c7e41b4f61efa0bf9b13, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EnemyAI
-  viewAngle: 100
-  viewDistance: 6
+  viewAngle: 180
+  viewDistance: 10
   obstructionMask:
     serializedVersion: 2
-    m_Bits: 1024
+    m_Bits: 1536
   playerMask:
     serializedVersion: 2
     m_Bits: 256

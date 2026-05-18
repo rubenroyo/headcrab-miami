@@ -245,17 +245,17 @@ public class EnemyCombatActions : MonoBehaviour
     //  GUARDAS
     // ─────────────────────────────────────────────
 
-    private bool CanMove() => !enemyController.IsDead && !enemyController.IsPossessed;
+    private bool CanMove() => !enemyController.IsDead && !enemyController.IsInjured && !enemyController.IsPossessed;
 
     /// <summary>El jugador puede mover al enemigo solo cuando lo está poseyendo.</summary>
-    private bool CanMoveAsPlayer() => enemyController.IsPossessed && !enemyController.IsDead;
+    private bool CanMoveAsPlayer() => enemyController.IsPossessed && !enemyController.IsDead && !enemyController.IsInjured;
 
     /// <summary>La IA puede mover al enemigo solo cuando NO está poseído.</summary>
-    private bool CanMoveAsAI()     => !enemyController.IsPossessed && !enemyController.IsDead;
+    private bool CanMoveAsAI()     => !enemyController.IsPossessed && !enemyController.IsDead && !enemyController.IsInjured;
 
     // La guarda de disparo no cambia: tanto jugador como IA pueden disparar
     // mientras el enemigo esté vivo y tenga arma.
-    private bool CanFire() => !enemyController.IsDead && inventory.HasWeapon;
+    private bool CanFire() => !enemyController.IsDead && !enemyController.IsInjured && inventory.HasWeapon;
 
     // ─────────────────────────────────────────────
     //  PROPIEDADES DE CONSULTA

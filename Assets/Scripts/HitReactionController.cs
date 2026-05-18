@@ -24,11 +24,12 @@ public class HitReactionController : MonoBehaviour
              "Ajusta según la escala del modelo (ej. 1.5 para un humano de 1.8 m).")]
     [SerializeField] private float headHeightThreshold = 1.5f;
 
-    // Triggers del Animator (nombre exacto debe coincidir con el Animator Controller)
+    // Triggers / bools del Animator (nombre exacto debe coincidir con el Animator Controller)
     private static readonly int TriggerHitBody  = Animator.StringToHash("HitBody");
     private static readonly int TriggerHitHead  = Animator.StringToHash("HitHead");
     private static readonly int TriggerHitRight = Animator.StringToHash("HitRight");
     private static readonly int TriggerHitLeft  = Animator.StringToHash("HitLeft");
+    private static readonly int BoolIsInjured   = Animator.StringToHash("IsInjured");
 
     private Rigidbody[] ragdollBodies;
     private Animator    animator;
@@ -46,6 +47,16 @@ public class HitReactionController : MonoBehaviour
     // ─────────────────────────────────────────────
     //  API PÚBLICA
     // ─────────────────────────────────────────────
+
+    /// <summary>
+    /// Activa el estado Injured en el Animator (bool IsInjured = true).
+    /// El enemigo queda inmovilizado y reproduce la animación de herido grave.
+    /// </summary>
+    public void EnterInjuredState()
+    {
+        if (animator == null || !animator.enabled) return;
+        animator.SetBool(BoolIsInjured, true);
+    }
 
     /// <summary>
     /// Reproduce la animación de impacto adecuada según la dirección del disparo.

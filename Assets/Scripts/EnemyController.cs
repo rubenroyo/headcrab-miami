@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 using UnityEngine.AI;
 
@@ -38,7 +39,11 @@ public class EnemyController : MonoBehaviour
     private MaterialPropertyBlock    highlightBlock;
     private PossessionHighlightType  currentHighlight = PossessionHighlightType.None;
 
-    private bool isPossessed = false;
+    private bool isPossessed    = false;
+    private bool isInjured      = false;
+    private bool isDeadRagdoll  = false;
+    private Coroutine injuredCoroutine;
+    private float injuredGraceEndTime = 0f;
     private InventoryHolder inventory;
     private HitReactionController hitReactionController;
     private CharacterController characterController;
@@ -46,7 +51,9 @@ public class EnemyController : MonoBehaviour
     private float verticalVelocity = 0f;
 
     public bool IsPossessed => isPossessed;
-    public bool IsDead => inventory != null && inventory.IsDead;
+    public bool IsInjured  => isInjured;
+    /// <summary>Solo true cuando el ragdoll está activo (muerte definitiva).</summary>
+    public bool IsDead => isDeadRagdoll;
     public InventoryHolder Inventory => inventory;
     public CharacterController Controller => characterController;
     public NavMeshAgent NavAgent => navAgent;
@@ -169,23 +176,63 @@ public class EnemyController : MonoBehaviour
     /// </summary>
     public void TakeDamage(float damage, Vector3 hitPoint, Vector3 hitDirection)
     {
-        if (inventory == null || inventory.IsDead) return;
+        if (inventory == null) return;
+
+        // Si ya está injured, cualquier golpe lo mata (respetando periodo de gracia)
+        if (isInjured)
+        {
+            if (Time.time < injuredGraceEndTime) return;
+            if (injuredCoroutine != null) StopCoroutine(injuredCoroutine);
+            Die(damage, hitPoint, hitDirection);
+            return;
+        }
+
+        if (inventory.IsDead) return;
 
         inventory.TakeDamage(damage);
 
         if (inventory.IsDead)
-            Die(damage, hitPoint, hitDirection);
+            BeginInjured(damage, hitPoint, hitDirection);
         else if (hitReactionController != null)
             hitReactionController.TriggerHitAnimation(hitPoint, hitDirection);
     }
 
+    private void BeginInjured(float finalDamage, Vector3 hitPoint, Vector3 hitDirection)
+    {
+        if (isInjured) return;
+        isInjured = true;
+        injuredGraceEndTime = Time.time + 0.5f;
+
+        EnemyAI ai = GetComponent<EnemyAI>();
+        if (ai != null) ai.enabled = false;
+
+        if (navAgent != null) { navAgent.isStopped = true; navAgent.enabled = false; }
+
+        if (hitReactionController != null)
+            hitReactionController.EnterInjuredState();
+
+        injuredCoroutine = StartCoroutine(InjuredCoroutine(finalDamage, hitPoint, hitDirection));
+    }
+
+    private IEnumerator InjuredCoroutine(float finalDamage, Vector3 hitPoint, Vector3 hitDirection)
+    {
+        yield return new WaitForSeconds(10f);
+        Die(finalDamage, hitPoint, hitDirection);
+    }
+
     private void Die(float finalDamage, Vector3 hitPoint, Vector3 hitDirection)
     {
+        if (isDeadRagdoll) return;  // evitar doble muerte
+        isDeadRagdoll = true;
+
         EnemyAI ai = GetComponent<EnemyAI>();
         if (ai != null) ai.enabled = false;
 
         if (navAgent != null) { navAgent.isStopped = true; navAgent.enabled = false; }
         if (characterController != null) characterController.enabled = false;
+
+        // Soltar el arma aquí, en la muerte real
+        if (inventory != null && inventory.HasWeapon) inventory.DropWeapon();
 
         SetModelVisible(true);
 

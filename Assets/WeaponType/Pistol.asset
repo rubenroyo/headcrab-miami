@@ -29,10 +29,10 @@ MonoBehaviour:
   isMelee: 0
   meleeRange: 1.5
   meleeDamage: 60
-  baseDispersion: 1.5
-  movingDispersionMultiplier: 5
-  sprintingDispersionMultiplier: 10
-  aimingDispersionMultiplier: 0.1
+  baseDispersion: 1
+  movingDispersionMultiplier: 1
+  sprintingDispersionMultiplier: 1
+  aimingDispersionMultiplier: 1
   tracerPrefab: {fileID: 311309669414730574, guid: c7dca71ec907b46499067f07ef62512a, type: 3}
   tracerDuration: 0.067
   pickupPrefab: {fileID: 356234826624909787, guid: ebd42bc50cb3cb74db0fcef7f10b08a0, type: 3}

@@ -88,6 +88,7 @@ public class EnemyAI : MonoBehaviour
     
     // Visión
     private Transform playerTransform;
+    private PlayerController playerController;
     private Vector3 lastKnownPlayerPosition;
     
     // Búsqueda
@@ -119,6 +120,7 @@ public class EnemyAI : MonoBehaviour
     
     // Combate
     private bool isRepositioning = false; // True si está ajustando distancia
+    private float diagnosticTimer = 0f;   // Para logs de diagnóstico periódicos
 
     public enum AIBehaviorType
     {
@@ -163,6 +165,12 @@ public class EnemyAI : MonoBehaviour
         ConfigureNavMeshAgent();
         FindPlayer();
         LoadPatrolRoute();
+
+        // Diagnóstico de masks al inicio
+        if (playerMask.value == 0)
+            Debug.LogWarning($"[AI-DIAG] {name}: playerMask está VACIO. El raycast de visión no golpeará al jugador. Asigna la layer del jugador en EnemyAI > Player Mask.");
+        if (obstructionMask.value == 0)
+            Debug.LogWarning($"[AI-DIAG] {name}: obstructionMask está VACIO. El enemigo verá a través de las paredes.");
         InitializeBehavior();
     }
 
@@ -275,7 +283,7 @@ public class EnemyAI : MonoBehaviour
         // SOLO mirar al jugador si ACTUALMENTE lo vemos
         if (CanSeePlayer && playerTransform != null)
         {
-            lookTarget = playerTransform.position;
+            lookTarget = GetPlayerBodyPosition();
             shouldRotate = true;
             rotationReason = "PLAYER_VISIBLE";
         }
@@ -339,17 +347,32 @@ public class EnemyAI : MonoBehaviour
         GameObject player = GameObject.FindGameObjectWithTag("Player");
         if (player != null)
         {
-            playerTransform = player.transform;
+            playerTransform  = player.transform;
+            playerController = player.GetComponentInParent<PlayerController>()
+                               ?? player.GetComponent<PlayerController>()
+                               ?? FindFirstObjectByType<PlayerController>();
+            Debug.Log($"[AI-DIAG] {name}: Jugador encontrado por tag 'Player' -> {player.name} (layer: {LayerMask.LayerToName(player.layer)}, PlayerController: {(playerController != null ? playerController.name : "NO ENCONTRADO")})");
         }
         else
         {
-            // Fallback: buscar PlayerController
+            // Fallback: buscar PlayerController directamente
             PlayerController pc = FindFirstObjectByType<PlayerController>();
             if (pc != null)
             {
-                playerTransform = pc.transform;
+                playerTransform  = pc.transform;
+                playerController = pc;
+                Debug.Log($"[AI-DIAG] {name}: Jugador encontrado por PlayerController -> {pc.name} (layer: {LayerMask.LayerToName(pc.gameObject.layer)})");
+            }
+            else
+            {
+                Debug.LogError($"[AI-DIAG] {name}: NO se encontró el jugador. Asegúrate de que el GameObject del Player tiene el tag 'Player'.");
             }
         }
+    }
+
+    private Vector3 GetPlayerBodyPosition()
+    {
+        return playerTransform != null ? playerTransform.position : Vector3.zero;
     }
 
     private void InitializeBehavior()
@@ -375,6 +398,11 @@ public class EnemyAI : MonoBehaviour
 
     private void UpdateVision()
     {
+        // Log de diagnóstico periódico (cada 2 segundos)
+        diagnosticTimer -= Time.deltaTime;
+        bool logThisFrame = diagnosticTimer <= 0f;
+        if (logThisFrame) diagnosticTimer = 2f;
+
         bool wasSeeing = CanSeePlayer;
         CanSeePlayer = false;
         DetectedPlayer = null;
@@ -385,12 +413,15 @@ public class EnemyAI : MonoBehaviour
             return;
         }
 
-        // 1. Verificar distancia
-        Vector3 directionToPlayer = playerTransform.position - transform.position;
+        Vector3 targetBodyPos = playerTransform.position;
+
+        // 1. Verificar distancia al cuerpo real
+        Vector3 directionToPlayer = targetBodyPos - transform.position;
         float distanceToPlayer = directionToPlayer.magnitude;
 
         if (distanceToPlayer > viewDistance)
         {
+            if (logThisFrame) Debug.Log($"[AI-DIAG] {name}: Cuerpo jugador a {distanceToPlayer:F1}m (viewDistance={viewDistance}). FUERA DE RANGO.");
             if (wasSeeing) Debug.Log($"[VISION] {name}: PERDIDO - Fuera de distancia ({distanceToPlayer:F1} > {viewDistance})");
             goto CheckLostPlayer;
         }
@@ -401,37 +432,33 @@ public class EnemyAI : MonoBehaviour
 
         if (angleToPlayer > viewAngle / 2f)
         {
+            if (logThisFrame) Debug.Log($"[AI-DIAG] {name}: Jugador a {angleToPlayer:F1}° (half-angle={viewAngle/2f:F1}°). FUERA DEL CONO.");
             if (wasSeeing) Debug.Log($"[VISION] {name}: PERDIDO - Fuera del cono ({angleToPlayer:F1}° > {viewAngle/2f}°)");
             goto CheckLostPlayer;
         }
 
-        // 3. Verificar línea de visión (raycast para obstáculos)
-        Vector3 eyePosition = transform.position + Vector3.up * 1f; // Altura de los ojos
-        Vector3 playerEyePosition = playerTransform.position + Vector3.up * 0.5f;
-        Vector3 dirToPlayerEyes = (playerEyePosition - eyePosition).normalized;
+        // 3. Verificar línea de visión: solo comprueba obstrucciones.
+        //    No requiere collider del jugador (compatible con CharacterController).
+        Vector3 eyePosition = transform.position + Vector3.up * 1f;
+        Vector3 bodyCenter  = targetBodyPos;
+        Vector3 dirToBody   = (bodyCenter - eyePosition).normalized;
+        float   distToBody  = Vector3.Distance(eyePosition, bodyCenter);
 
-        if (Physics.Raycast(eyePosition, dirToPlayerEyes, out RaycastHit hit, viewDistance, obstructionMask | playerMask))
+        if (logThisFrame) Debug.Log($"[AI-DIAG] {name}: En rango y cono ({distanceToPlayer:F1}m, {angleToPlayer:F1}°). Target={targetBodyPos}. Raycast obstruction...");
+
+        bool obstructed = Physics.Raycast(eyePosition, dirToBody, out RaycastHit hit, distToBody, obstructionMask);
+        if (!obstructed)
         {
-            // Verificar si golpeamos al jugador o a un obstáculo
-            if (hit.transform == playerTransform || hit.transform.CompareTag("Player"))
-            {
-                CanSeePlayer = true;
-                DetectedPlayer = playerTransform;
-                lastKnownPlayerPosition = playerTransform.position;
-                
-                if (!wasSeeing) Debug.Log($"[VISION] {name}: VISTO! lastKnown={lastKnownPlayerPosition}");
-                
-                // La detección del jugador se maneja en EvaluateAndSetBestTarget()
-                // que considera las prioridades de items vs jugador
-            }
-            else
-            {
-                if (wasSeeing) Debug.Log($"[VISION] {name}: PERDIDO - Obstruido por {hit.transform.name}");
-            }
+            CanSeePlayer = true;
+            DetectedPlayer = playerTransform;
+            lastKnownPlayerPosition = targetBodyPos;
+
+            if (!wasSeeing) Debug.Log($"[VISION] {name}: VISTO! lastKnown={lastKnownPlayerPosition}");
         }
         else
         {
-            if (wasSeeing) Debug.Log($"[VISION] {name}: PERDIDO - Raycast no golpeó nada");
+            if (logThisFrame) Debug.Log($"[AI-DIAG] {name}: Obstruido por '{hit.transform.name}' (layer={LayerMask.LayerToName(hit.transform.gameObject.layer)})");
+            if (wasSeeing) Debug.Log($"[VISION] {name}: PERDIDO - Obstruido por {hit.transform.name}");
         }
 
         CheckLostPlayer:
@@ -534,7 +561,7 @@ public class EnemyAI : MonoBehaviour
         {
             if (CanSeePlayer && playerTransform != null)
             {
-                navAgent.SetDestination(playerTransform.position);
+                navAgent.SetDestination(GetPlayerBodyPosition());
             }
             nextPathUpdateTime = Time.time + pathUpdateInterval;
         }
@@ -574,7 +601,8 @@ public class EnemyAI : MonoBehaviour
 
         navAgent.speed = GetWalkSpeed(); // Moverse más lento en combate
 
-        float distanceToPlayer = Vector3.Distance(transform.position, playerTransform.position);
+        Vector3 playerBodyPos = GetPlayerBodyPosition();
+        float distanceToPlayer = Vector3.Distance(transform.position, playerBodyPos);
 
         // Lógica de posicionamiento
         if (distanceToPlayer < minCombatDistance - repositionThreshold)
@@ -586,7 +614,7 @@ public class EnemyAI : MonoBehaviour
                 Debug.Log($"[COMBAT] {name}: Demasiado cerca ({distanceToPlayer:F1}m), retrocediendo");
             }
             
-            Vector3 retreatDirection = (transform.position - playerTransform.position).normalized;
+            Vector3 retreatDirection = (transform.position - playerBodyPos).normalized;
             Vector3 retreatTarget = transform.position + retreatDirection * 2f;
             
             if (NavMesh.SamplePosition(retreatTarget, out NavMeshHit hit, 3f, NavMesh.AllAreas))
@@ -605,8 +633,8 @@ public class EnemyAI : MonoBehaviour
             }
             
             // Ir hacia el jugador pero detenerse a distancia óptima
-            Vector3 dirToPlayer = (playerTransform.position - transform.position).normalized;
-            Vector3 targetPos = playerTransform.position - dirToPlayer * optimalCombatDistance;
+            Vector3 dirToPlayer = (playerBodyPos - transform.position).normalized;
+            Vector3 targetPos = playerBodyPos - dirToPlayer * optimalCombatDistance;
             
             navAgent.SetDestination(targetPos);
             navAgent.isStopped = false;
@@ -639,7 +667,7 @@ public class EnemyAI : MonoBehaviour
             return;
 
         Vector3 eyePosition  = transform.position + Vector3.up * 1f;
-        Vector3 playerCenter = playerTransform.position + Vector3.up * 0.5f;
+        Vector3 playerCenter = GetPlayerBodyPosition();
         Vector3 dirToPlayer  = (playerCenter - eyePosition).normalized;
         float   dist         = Vector3.Distance(eyePosition, playerCenter);
 

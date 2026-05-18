@@ -117,7 +117,7 @@ public class InventoryHolder : MonoBehaviour
     private void Die()
     {
         OnDeath?.Invoke();
-        if (HasWeapon) DropWeapon();
+        // El arma se suelta en EnemyController.Die() para respetar el estado Injured
     }
 
     // ─────────────────────────────────────────────
